@@ -25,12 +25,7 @@ from labscript_utils.ls_zprocess import ZMQServer
 import fixtures
 import runmanager.__main__
 from runmanager.__main__ import RunManager, RunmanagerServer
-from runmanager.blacs_status import (
-    POLL_TIMEOUT,
-    BlacsStatusMonitor,
-    blacs_activity_display,
-    blacs_link_display,
-)
+from runmanager.blacs_status import blacs_state
 from runmanager.client import RunmanagerClient
 from runmanager.queueing import EMPTY_QUEUE_DEFAULT_LABSCRIPT, QueueController, QueueManager
 
@@ -199,11 +194,7 @@ class IntegrationFixture(object):
         self.blacs_server = BlacsServer(bind_address='tcp://127.0.0.1')
         self.addCleanup(self.blacs_server.shutdown)
         self.status_client = BlacsClient(
-            host='127.0.0.1', port=self.blacs_server.port, timeout=POLL_TIMEOUT
-        )
-        self.statuses = []
-        self.monitor = BlacsStatusMonitor(
-            self.statuses.append, client=self.status_client
+            host='127.0.0.1', port=self.blacs_server.port, timeout=1
         )
 
         self.real_process_tree = shot_execution.process_tree
@@ -275,7 +266,7 @@ class IntegrationFixture(object):
         self.while_running.append(
             {
                 'rows': self.runmanager.rows(),
-                'status': self.monitor.poll(),
+                'status': self.status_client.get_status(),
             }
         )
 
@@ -622,51 +613,35 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
 
         self.assertEqual(
-            blacs_activity_display(self.monitor.poll())[0],
-            'BLACS: not requesting shots',
+            blacs_state(self.status_client.get_status())[0],
+            'not requesting shots',
             'BLACS starts up not requesting shots',
         )
 
         self.executor.requesting_shots = True
         self.run_loop(passes=2)
 
-        text, tooltip = blacs_activity_display(self.while_running[0]['status'])
-        self.assertEqual(text, 'BLACS: running shot_a.h5')
-        self.assertIn('shot_a.h5', tooltip)
+        state, details = blacs_state(self.while_running[0]['status'])
+        self.assertEqual(state, 'running shot_a.h5')
+        self.assertIn('shot_a.h5', '\n'.join(details))
         self.assertEqual(
-            blacs_activity_display(self.monitor.poll())[0],
-            'BLACS: requesting shots',
+            blacs_state(self.status_client.get_status())[0],
+            'requesting shots',
             'and once the shot is over it is asking for another',
         )
 
-    def test_a_blacs_that_answers_is_online_whatever_it_is_doing(self):
-        # The light beside the destination checkbox is the link, not the
-        # queue: BLACS is online through all of this, including while it is
-        # sitting there deliberately not asking for work.
-        shot = self.make_shot_file('shot_a.h5')
-        self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
-
-        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
-
-        self.executor.requesting_shots = True
-        self.run_loop(passes=2)
-
-        self.assertEqual(
-            blacs_link_display(self.while_running[0]['status'])[0], 'online'
-        )
-        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
-
-    def test_a_blacs_that_comes_back_is_shown_as_back(self):
-        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
+    def test_a_blacs_that_comes_back_answers_again(self):
+        self.status_client.get_status()
 
         port = self.blacs_server.port
         self.blacs_server.shutdown()
-        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'offline')
+        with self.assertRaises(Exception):
+            self.status_client.get_status()
 
         # A restarted BLACS serves on the port runmanager is configured with.
         self.blacs_server = BlacsServer(port=port, bind_address='tcp://127.0.0.1')
         self.addCleanup(self.blacs_server.shutdown)
-        self.assertEqual(blacs_link_display(self.monitor.poll())[0], 'online')
+        self.status_client.get_status()
 
     def test_the_status_pull_carries_the_reason_blacs_stopped(self):
         shot = self.make_shot_file('shot_a.h5')
@@ -676,19 +651,9 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
         self.executor.requesting_shots = True
         self.run_loop(passes=2)
 
-        answer = self.monitor.poll()
-        text, tooltip = blacs_activity_display(answer)
-        self.assertIn('stopped', text)
-        self.assertIn('Aborted', text)
-        self.assertIn('Aborted', tooltip)
-        self.assertEqual(
-            blacs_link_display(answer)[0],
-            'online',
-            'an apparatus that stopped is still answering',
-        )
-        self.assertEqual(
-            self.statuses[-1], self.monitor.poll(), 'every answer is reported'
-        )
+        state, _ = blacs_state(self.status_client.get_status())
+        self.assertIn('stopped', state)
+        self.assertIn('Aborted', state)
 
 
 class DefaultShotTests(IntegrationFixture, unittest.TestCase):
