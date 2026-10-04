@@ -258,24 +258,7 @@ QToolButton:hover:checked {
                  </widget>
                 </item>
                 <item>
-                 <widget class="QLabel" name="runmanager_online">
-                  <property name="text">
-                   <string/>
-                  </property>
-                  <property name="pixmap">
-                   <pixmap>:/qtutils/fugue/status-offline.png</pixmap>
-                  </property>
-                  <property name="scaledContents">
-                   <bool>false</bool>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QLabel" name="runmanager_state_label">
-                  <property name="text">
-                   <string/>
-                  </property>
-                 </widget>
+                 <layout class="QHBoxLayout" name="runmanager_link_layout"/>
                 </item>
                 <item>
                  <spacer name="horizontalSpacer_2">

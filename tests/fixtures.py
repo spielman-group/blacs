@@ -93,10 +93,10 @@ blacs_main = _import_blacs_without_starting_it()
 BlacsServer = blacs_main.BlacsServer
 
 from blacs.shot_execution import PublishedStatus, ShotExecutor
-from labscript_utils.qtwidgets.link_indicator import LinkIndicator, LinkMonitor
-from qtutils.qt.QtWidgets import QApplication, QLabel
+from labscript_utils.qtwidgets.link_indicator import LinkIndicator
+from qtutils.qt.QtWidgets import QApplication
 
-# The runmanager light is real, and its labels need an application. Held for
+# The runmanager light is real, and it needs an application. Held for
 # the life of the process, as the layout tests hold theirs.
 _qapplication = QApplication.instance() or QApplication([])
 
@@ -138,8 +138,6 @@ class FakeUi(object):
         self.shot_abort_button = FakeButton()
         self.shot_status = FakeTextWidget()
         self.running_shot_name = FakeTextWidget()
-        self.runmanager_online = QLabel()
-        self.runmanager_state_label = QLabel()
 
 
 class FakeConfig(object):
@@ -179,11 +177,6 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     # The shot loop's thread. __init__ starts it; an executor built here has no
     # loop running, and a test that wants one puts a started thread here.
     executor.manager = threading.Thread(target=lambda: None)
-    executor._runmanager_link = LinkIndicator(
-        executor._ui.runmanager_online,
-        'runmanager',
-        text_label=executor._ui.runmanager_state_label,
-    )
-    # Built but not started: no test here polls a runmanager for the light.
-    executor._runmanager_monitor = LinkMonitor(lambda: None, lambda reachable, answer: None)
+    # Built but not started: no test here probes a runmanager for the light.
+    executor._runmanager_link = LinkIndicator('runmanager', lambda: None)
     return executor

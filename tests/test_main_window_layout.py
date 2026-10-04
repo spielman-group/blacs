@@ -15,6 +15,7 @@ import os
 import unittest
 
 from qtutils import UiLoader
+from qtutils.qt.QtCore import QObject
 from qtutils.qt.QtWidgets import QApplication, QSplitter, QWidget
 
 import blacs
@@ -62,13 +63,12 @@ class MainWindowLayoutTests(unittest.TestCase):
             'shot_abort_button',
             'shot_status',
             'running_shot_name',
-            'runmanager_online',
-            'runmanager_state_label',
+            'runmanager_link_layout',
             'local_override_lineEdit',
             'local_override_browse_button',
         ):
             self.assertIsNotNone(
-                self.ui.findChild(QWidget, name), '%s is looked up by name' % name
+                self.ui.findChild(QObject, name), '%s is looked up by name' % name
             )
 
     def test_the_shot_controls_are_not_in_a_splitter(self):

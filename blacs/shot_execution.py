@@ -33,7 +33,7 @@ import labscript_utils.h5_lock, h5py
 from qtutils import inmain_decorator, inmain
 
 from labscript_utils.qtwidgets.elide_label import elide_label
-from labscript_utils.qtwidgets.link_indicator import LinkIndicator, LinkMonitor
+from labscript_utils.qtwidgets.link_indicator import LinkIndicator
 from labscript_utils.connections import ConnectionTable
 from labscript_utils.file_utils import next_available_indexed_filepath
 import labscript_utils.properties
@@ -138,21 +138,15 @@ class ShotExecutor(object):
         elide_label(self._ui.shot_status, self._ui.shot_status_verticalLayout, Qt.ElideRight)
         elide_label(self._ui.running_shot_name, self._ui.shot_status_verticalLayout, Qt.ElideLeft)
         runmanager_client = RunmanagerClient()
-        self._runmanager_link = LinkIndicator(
-            self._ui.runmanager_online,
-            'runmanager',
-            text_label=self._ui.runmanager_state_label,
-            host=runmanager_client.host,
-        )
         # The light polls on its own: with requests off the shot loop never
         # contacts runmanager, so it cannot keep the light current.
-        self._runmanager_monitor = LinkMonitor(
+        self._runmanager_link = LinkIndicator(
+            'runmanager',
             lambda: runmanager_client.say_hello(timeout=1),
-            lambda reachable, answer: self._runmanager_link.show_link(
-                reachable, None if reachable else answer
-            ),
+            host=runmanager_client.host,
         )
-        self._runmanager_monitor.start()
+        self._ui.runmanager_link_layout.addWidget(self._runmanager_link)
+        self._runmanager_link.start()
 
         self.manager = threading.Thread(target = self.manage)
         self.manager.daemon=True
@@ -278,7 +272,7 @@ class ShotExecutor(object):
 
     def stop(self):
         """Stop shot execution. Called from the GUI thread as BLACS closes."""
-        self._runmanager_monitor.shutdown()
+        self._runmanager_link.shutdown()
         self.manager_running = False
 
     def final_report_pending(self):
