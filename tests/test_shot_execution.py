@@ -26,6 +26,8 @@ from blacs.shot_execution import ShotExecutor
 # be imported before anything imports h5py, and BLACS is what imports it.
 import h5py
 
+from qtutils.qt.QtWidgets import QApplication
+
 
 class FakeRunmanager(object):
     """Stands in for ShotExecutor.runmanager_rpc, recording what was sent."""
@@ -548,13 +550,21 @@ def offer(shot_id, path):
     return {'state': 'shot', 'shot_id': shot_id, 'path': path}
 
 
+def link_state(executor):
+    """What BLACS's runmanager light says it is doing, once queued updates land."""
+    QApplication.instance().processEvents()
+    return executor._runmanager_link.state
+
+
 NOTHING_OFFERED = (
     # The four ways an exchange can come back with no shot to wait for: a
     # runmanager whose queue its own user has paused, one with nothing queued,
     # one we cannot reach at all, and one whose reply we could not make sense of.
     #
     # Each case gives what runmanager answered, whether we reached it, the
-    # state the exchange reports for it, and what BLACS then says it is doing.
+    # state the exchange reports for it, and what BLACS's runmanager light then
+    # says it is doing; the light's own poller, not the shot loop, shows that
+    # runmanager is not answering.
     (
         'a paused queue',
         {'state': 'paused', 'shot_id': None, 'path': None},
@@ -569,7 +579,7 @@ NOTHING_OFFERED = (
         'none',
         'Requesting shots',
     ),
-    ('an unreachable runmanager', None, False, 'none', 'Runmanager unavailable'),
+    ('an unreachable runmanager', None, False, 'none', 'Requesting shots'),
     (
         'a reply we cannot read',
         'not a response at all',
@@ -845,7 +855,7 @@ class ShotLoopTests(ShotLoopFixture, unittest.TestCase):
         self.run_loop(executor)
 
         self.assertEqual(taken_up, [], 'not even the local override shot runs')
-        self.assertEqual(executor.get_status(), 'Not requesting shots')
+        self.assertEqual(link_state(executor), 'Not requesting shots')
 
 
 class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
@@ -904,7 +914,7 @@ class NoShotOfferedTests(ShotLoopFixture, unittest.TestCase):
 
                 self.run_loop(executor)
 
-                self.assertEqual(executor.get_status(), status)
+                self.assertEqual(link_state(executor), status)
 
 
 class LocalFallbackTests(ShotLoopFixture, unittest.TestCase):
@@ -1224,14 +1234,14 @@ class StatusWhenRequestsStopTests(ShotLoopFixture, unittest.TestCase):
                 shown = []
 
                 def stop_requesting():
-                    shown.append(executor.get_status())
+                    shown.append(link_state(executor))
                     executor._requesting_shots = False
 
                 self.run_changing_it_between_passes(executor, stop_requesting)
 
                 self.assertEqual(shown, [first_status], 'what was on screen')
                 self.assertEqual(
-                    executor.get_status(),
+                    link_state(executor),
                     'Not requesting shots',
                     '%r is something BLACS has stopped doing' % first_status,
                 )

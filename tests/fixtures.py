@@ -34,10 +34,10 @@ class _SilentSplash(object):
     Standing in for the splash module before the import is what avoids that,
     and it avoids it completely: ``Splash.__init__`` is also what creates the
     ``QApplication``, so with this in place the import creates no Qt
-    application at all rather than a hidden one. Tests that need a real
-    QApplication build their own -- see ``test_main_window_layout.py``, which
-    must also ``show()`` its window, because Qt does not lay out a widget that
-    was never shown.
+    application at all rather than a hidden one. The one the tests need is
+    built below, after the import. A test that renders must also ``show()`` its
+    window, as ``test_main_window_layout.py`` does, because Qt does not lay out
+    a widget that was never shown.
     """
 
     def __init__(self, *args, **kwargs):
@@ -93,6 +93,12 @@ blacs_main = _import_blacs_without_starting_it()
 BlacsServer = blacs_main.BlacsServer
 
 from blacs.shot_execution import PublishedStatus, ShotExecutor
+from labscript_utils.qtwidgets.link_indicator import LinkIndicator, LinkMonitor
+from qtutils.qt.QtWidgets import QApplication, QLabel
+
+# The runmanager light is real, and its labels need an application. Held for
+# the life of the process, as the layout tests hold theirs.
+_qapplication = QApplication.instance() or QApplication([])
 
 
 class FakeTextWidget(object):
@@ -123,14 +129,6 @@ class FakeButton(object):
         pass
 
 
-class FakeIndicator(object):
-    def setPixmap(self, pixmap):
-        pass
-
-    def setToolTip(self, tooltip):
-        pass
-
-
 class FakeUi(object):
     """The widget names main.ui carries, and nothing behind them."""
 
@@ -140,8 +138,8 @@ class FakeUi(object):
         self.shot_abort_button = FakeButton()
         self.shot_status = FakeTextWidget()
         self.running_shot_name = FakeTextWidget()
-        self.runmanager_online = FakeIndicator()
-        self.runmanager_status_label = FakeIndicator()
+        self.runmanager_online = QLabel()
+        self.runmanager_state_label = QLabel()
 
 
 class FakeConfig(object):
@@ -174,8 +172,6 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     executor._next_rep_index = {}
     executor._runmanager_request_client = None
     executor._runmanager_request_error_logged = False
-    executor._runmanager_online = ''
-    executor.failure_reason = None
     executor.local_error = None
     executor.published_status = PublishedStatus('', None, None)
     executor.last_opened_shots_folder = ''
@@ -183,4 +179,11 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     # The shot loop's thread. __init__ starts it; an executor built here has no
     # loop running, and a test that wants one puts a started thread here.
     executor.manager = threading.Thread(target=lambda: None)
+    executor._runmanager_link = LinkIndicator(
+        executor._ui.runmanager_online,
+        'runmanager',
+        text_label=executor._ui.runmanager_state_label,
+    )
+    # Built but not started: no test here polls a runmanager for the light.
+    executor._runmanager_monitor = LinkMonitor(lambda: None, lambda reachable, answer: None)
     return executor

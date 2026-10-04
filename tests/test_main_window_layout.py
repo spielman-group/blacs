@@ -63,7 +63,7 @@ class MainWindowLayoutTests(unittest.TestCase):
             'shot_status',
             'running_shot_name',
             'runmanager_online',
-            'runmanager_status_label',
+            'runmanager_state_label',
             'local_override_lineEdit',
             'local_override_browse_button',
         ):

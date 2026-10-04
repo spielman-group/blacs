@@ -22,8 +22,7 @@ from collections import defaultdict, namedtuple
 from tempfile import gettempdir
 from binascii import hexlify
 
-from qtutils.qt.QtCore import Qt, QSize
-from qtutils.qt.QtGui import QIcon
+from qtutils.qt.QtCore import Qt
 from qtutils.qt.QtWidgets import QFileDialog
 
 import zprocess
@@ -34,6 +33,7 @@ import labscript_utils.h5_lock, h5py
 from qtutils import inmain_decorator, inmain
 
 from labscript_utils.qtwidgets.elide_label import elide_label
+from labscript_utils.qtwidgets.link_indicator import LinkIndicator, LinkMonitor
 from labscript_utils.connections import ConnectionTable
 from labscript_utils.file_utils import next_available_indexed_filepath
 import labscript_utils.properties
@@ -57,7 +57,8 @@ from runmanager.client import (
 # The two ways of getting it wrong are not symmetric. Too short and a
 # runmanager that is merely remote is judged absent, so BLACS silently stops
 # taking queued work while the apparatus quietly runs its own shots -- wrong,
-# and invisible to the operator, who sees only "runmanager unavailable". Too
+# and easy to miss, because the runmanager light polls on its own and can
+# still show runmanager answering. Too
 # long and an absent runmanager adds this to every shot cycle as dead time, on
 # an apparatus that is otherwise running perfectly well -- visible, and costing
 # time rather than data. So err long. A trivial round trip is well under a
@@ -71,9 +72,9 @@ from runmanager.client import (
 # compile silently slow down noticing that runmanager has gone.
 LIVENESS_TIMEOUT = 5
 
-# What the status says when BLACS holds no shot. Requesting and getting nothing
-# is not idleness -- BLACS is asking runmanager over and over -- and saying so
-# is the clearest sign an operator has that the Request shots button is in:
+# What the runmanager light says BLACS is doing with runmanager. Requesting and
+# getting nothing is not idleness -- BLACS is asking over and over -- and saying
+# so is the clearest sign an operator has that the Request shots button is in:
 REQUESTING = 'Requesting shots'
 NOT_REQUESTING = 'Not requesting shots'
 
@@ -108,12 +109,10 @@ class ShotExecutor(object):
         self.master_pseudoclock = self.BLACS.connection_table.master_pseudoclock
         self._runmanager_request_client = None
         self._runmanager_request_error_logged = False
-        self.failure_reason = None
         # Why requests were stopped here, at the apparatus: an abort, a shot we
-        # could not run, a device that needs attention. Distinct from
-        # failure_reason, which is why runmanager could not be reached, and
-        # read from outside this class so that it can be shown to a runmanager
-        # user who is not standing at BLACS.
+        # could not run, a device that needs attention. Read from outside this
+        # class so that it can be shown to a runmanager user who is not
+        # standing at BLACS.
         self.local_error = None
         # How the shot we are running turned out, until the next exchange
         # carries it to runmanager, and the id of the shot we are running:
@@ -138,7 +137,22 @@ class ShotExecutor(object):
         # Set the elision of the status labels:
         elide_label(self._ui.shot_status, self._ui.shot_status_verticalLayout, Qt.ElideRight)
         elide_label(self._ui.running_shot_name, self._ui.shot_status_verticalLayout, Qt.ElideLeft)
-        self.runmanager_online = 'checking'
+        runmanager_client = RunmanagerClient()
+        self._runmanager_link = LinkIndicator(
+            self._ui.runmanager_online,
+            'runmanager',
+            text_label=self._ui.runmanager_state_label,
+            host=runmanager_client.host,
+        )
+        # The light polls on its own: with requests off the shot loop never
+        # contacts runmanager, so it cannot keep the light current.
+        self._runmanager_monitor = LinkMonitor(
+            lambda: runmanager_client.say_hello(timeout=1),
+            lambda reachable, answer: self._runmanager_link.show_link(
+                reachable, None if reachable else answer
+            ),
+        )
+        self._runmanager_monitor.start()
 
         self.manager = threading.Thread(target = self.manage)
         self.manager.daemon=True
@@ -209,42 +223,6 @@ class ShotExecutor(object):
         self.local_error = str(reason)
         self.requesting_shots = False
 
-    @property
-    @inmain_decorator(True)
-    def runmanager_online(self):
-        return self._runmanager_online
-
-    @runmanager_online.setter
-    @inmain_decorator(True)
-    def runmanager_online(self, value):
-        self._runmanager_online = str(value)
-
-        icon_names = {
-            'checking': ':/qtutils/fugue/hourglass',
-            'online': ':/qtutils/fugue/tick',
-            'offline': ':/qtutils/fugue/exclamation',
-            '': ':/qtutils/fugue/status-offline',
-        }
-        tooltips = {
-            'checking': 'Checking runmanager...',
-            'online': 'Runmanager is responding',
-            'offline': 'Runmanager is not responding',
-            '': 'Runmanager status unknown',
-        }
-
-        icon = QIcon(icon_names.get(self._runmanager_online, ':/qtutils/fugue/exclamation-red'))
-        pixmap = icon.pixmap(QSize(16, 16))
-        tooltip = tooltips.get(
-            self._runmanager_online,
-            "Invalid runmanager status: %s" % self._runmanager_online,
-        )
-        if self.failure_reason:
-            tooltip += '\n' + self.failure_reason
-
-        self._ui.runmanager_online.setPixmap(pixmap)
-        self._ui.runmanager_online.setToolTip(tooltip)
-        self._ui.runmanager_status_label.setToolTip(tooltip)
-
     def browse_local_override(self):
         shot_file = QFileDialog.getOpenFileName(
             self._ui,
@@ -264,19 +242,14 @@ class ShotExecutor(object):
 
     def runmanager_rpc(self, method, unavailable_message, *args, client=None, **kwargs):
         try:
-            self.runmanager_online = 'checking'
             if client is None:
                 if self._runmanager_request_client is None:
                     self._runmanager_request_client = RunmanagerClient()
                 client = self._runmanager_request_client
             response = method(client, *args, **kwargs)
-            self.failure_reason = None
-            self.runmanager_online = 'online'
             self._runmanager_request_error_logged = False
             return True, response
         except Exception as exc:
-            self.failure_reason = str(exc)
-            self.runmanager_online = 'offline'
             if not self._runmanager_request_error_logged:
                 self._logger.warning(unavailable_message, exc, exc_info=exc)
                 self._runmanager_request_error_logged = True
@@ -305,6 +278,7 @@ class ShotExecutor(object):
 
     def stop(self):
         """Stop shot execution. Called from the GUI thread as BLACS closes."""
+        self._runmanager_monitor.shutdown()
         self.manager_running = False
 
     def final_report_pending(self):
@@ -674,18 +648,11 @@ class ShotExecutor(object):
             # be reported is not held back by it either, so runmanager always
             # learns how the shot it offered turned out.
             if not self.requesting_shots and self._pending_outcome is None:
-                # Said once, and not over the top of a reason. Comparing
-                # against the message we are about to set is what makes this
-                # idempotent whatever the status was before -- it used to
-                # compare against "Idle", which meant a status set by any other
-                # branch, a paused runmanager's for one, stayed on the screen
-                # for as long as requests were off, describing something BLACS
-                # had stopped doing. A standing local error is different and is
-                # left alone, for the reason given where the other branches set
-                # their status.
-                if not self.local_error and self.get_status() != NOT_REQUESTING:
-                    logger.info('Not requesting shots')
-                    self.set_status(NOT_REQUESTING)
+                self._runmanager_link.show_state(NOT_REQUESTING)
+                # A standing local error is left on the status line, for the
+                # reason given where the other branches set their status.
+                if not self.local_error:
+                    self.set_status('Idle')
                 time.sleep(1)
                 continue
 
@@ -695,7 +662,6 @@ class ShotExecutor(object):
                 agnostic_path = None
                 runmanager_paused = False
                 runmanager_pending = False
-                runmanager_failed = False
                 if self.runmanager_alive():
                     # One exchange reports how the last shot turned out and
                     # asks for the next one. There is nothing to acknowledge:
@@ -712,7 +678,7 @@ class ShotExecutor(object):
                     # for work from anywhere else, or while a shot is under
                     # way, breaks that inference and would have one shot handed
                     # out twice.
-                    response, reached = self.exchange_with_runmanager(request_shot)
+                    response, _ = self.exchange_with_runmanager(request_shot)
                     shot_id = response['shot_id']
                     agnostic_path = response['path']
                     # A paused runmanager is one whose user has stopped it
@@ -725,9 +691,6 @@ class ShotExecutor(object):
                     # Pending is the shot runmanager will offer next, still
                     # compiling: wait for it rather than run ours in the gap.
                     runmanager_pending = response['state'] == PROVIDER_PENDING
-                    runmanager_failed = not reached
-                else:
-                    runmanager_failed = True
                 self._current_shot_id = shot_id
 
                 if not agnostic_path and request_shot and not runmanager_pending:
@@ -740,19 +703,17 @@ class ShotExecutor(object):
                         )
 
                 if not agnostic_path:
-                    # Nothing to say when something here stopped requests: the
-                    # status already says why, and this pass -- the one that
-                    # delivers that shot's outcome -- would otherwise wipe it
-                    # within a second of an operator having a chance to read it.
+                    # A standing local error stays on the status line: this pass
+                    # -- the one that delivers that shot's outcome -- would
+                    # otherwise wipe it before an operator could read it.
                     if not self.local_error:
-                        if runmanager_failed:
-                            self.set_status("Runmanager unavailable")
-                        elif not request_shot:
-                            self.set_status(NOT_REQUESTING)
-                        elif runmanager_paused:
-                            self.set_status("Runmanager queue paused")
-                        else:
-                            self.set_status(REQUESTING)
+                        self.set_status('Idle')
+                    if not request_shot:
+                        self._runmanager_link.show_state(NOT_REQUESTING)
+                    elif runmanager_paused:
+                        self._runmanager_link.show_state('Runmanager queue paused')
+                    else:
+                        self._runmanager_link.show_state(REQUESTING)
                     time.sleep(1)
                     continue
 

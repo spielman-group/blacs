@@ -344,7 +344,10 @@ the labconfig, five by default. That question gates the exchange, so an
 unreachable runmanager costs the wait once per shot rather than once per status
 update: with a local override running through an outage, it is added to every
 shot cycle. Lower it if that overhead matters more than tolerating a slow link;
-raise it if a merely remote runmanager is being reported as unavailable. It is
+raise it if BLACS treats a merely remote runmanager as absent and runs its
+local override shot instead of queued work. BLACS's runmanager light does not
+use it: the light asks on its own, every two seconds with a one-second
+deadline, so it stays current while requests are off. It is
 deliberately not tied to ``communication_timeout``, which is the allowance for
 runmanager to choose and prepare a shot: that is work, this is a round trip, and
 sizing one from the other would make raising the allowance for a slow compile
