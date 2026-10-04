@@ -283,16 +283,15 @@ has. A path with no identifier is BLACS running its own local override shot,
 and runmanager says so. The snapshot is answered without the GUI thread, so a
 BLACS busy with a shot still answers.
 
-One snapshot is shown in two places, because it answers two different
-questions. Beside the **BLACS** checkbox is a light saying whether BLACS
-answered at all: checking, then responding or not responding. It means exactly
-what the lyse light on the row below it means and no more — a BLACS sitting
-there with **Request shots** unticked, or stopped by a device error, is a
-healthy link and shows as responding. Beside **Pause queue** is a line of text
-saying what BLACS is doing with the queue: requesting shots, running a named
-shot, not requesting shots, or stopped with the reason. That is queue
-behaviour rather than link health, it belongs next to the control it is about,
-and none of it is a yes or a no that a glyph could carry.
+The snapshot is shown beside the **BLACS** checkbox. Its light says whether
+BLACS answered at all: checking, then responding or not responding. It means
+exactly what the lyse light on the row below it means and no more — a BLACS
+sitting there with **Request shots** unticked, or stopped by a device error, is
+a healthy link and shows as responding. While BLACS answers, the text beside
+the light says what it is doing with the queue: requesting shots, running a
+named shot, not requesting shots, or stopped with the reason. The light's
+tooltip adds BLACS's own activity and, for a shot under way, its path and
+identifier.
 
 Both are informational only. Apart from answering a ``hello`` ping,
 ``get_status`` is the only command BLACS's server serves, and that is
@@ -329,9 +328,9 @@ compiling, which BLACS waits for instead. It belongs to no runmanager queue, so
 its completions are reported to nobody: they reach neither runmanager nor lyse,
 which is what keeps repetitions of a shot nobody submitted out of the analysis.
 No queue row is created, changed or retired by one — though a runmanager can
-still see that BLACS is running one: the activity line beside **Pause queue**
-names the shot, and its tooltip says the shot has no identifier and so is a
-BLACS local override rather than queued work. Each repetition after the first is written to its own numbered
+still see that BLACS is running one: the text beside its BLACS light names the
+shot, and the light's tooltip says it is not a queued shot but a BLACS local
+override. Each repetition after the first is written to its own numbered
 ``_repXXXXX.h5`` file, so no data is overwritten. A
 local override shot BLACS cannot run still stops requests and records the
 reason, because retrying an unrunnable shot once a second is no answer either —
@@ -344,7 +343,10 @@ the labconfig, five by default. That question gates the exchange, so an
 unreachable runmanager costs the wait once per shot rather than once per status
 update: with a local override running through an outage, it is added to every
 shot cycle. Lower it if that overhead matters more than tolerating a slow link;
-raise it if a merely remote runmanager is being reported as unavailable. It is
+raise it if BLACS treats a merely remote runmanager as absent and runs its
+local override shot instead of queued work. BLACS's runmanager light does not
+use it: the light asks on its own, every two seconds with a one-second
+deadline, so it stays current while requests are off. It is
 deliberately not tied to ``communication_timeout``, which is the allowance for
 runmanager to choose and prepare a shot: that is work, this is a round trip, and
 sizing one from the other would make raising the allowance for a slow compile
