@@ -141,9 +141,7 @@ class ShotExecutor(object):
         # The light polls on its own: with requests off the shot loop never
         # contacts runmanager, so it cannot keep the light current.
         self._runmanager_link = LinkIndicator(
-            'runmanager',
-            lambda: runmanager_client.say_hello(timeout=1),
-            host=runmanager_client.host,
+            'runmanager', runmanager_client.host, runmanager_client.port
         )
         self._ui.runmanager_link_layout.addWidget(self._runmanager_link)
         self._runmanager_link.start()
