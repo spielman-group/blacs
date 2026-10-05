@@ -43,6 +43,7 @@ from blacs.tab_base_classes import MODE_TRANSITION_TO_BUFFERED, MODE_BUFFERED
 import blacs.plugins as plugins
 
 from runmanager.client import (
+    DEFAULT_PORT,
     PROVIDER_NONE,
     PROVIDER_PAUSED,
     PROVIDER_PENDING,
@@ -137,11 +138,12 @@ class ShotExecutor(object):
         # Set the elision of the status labels:
         elide_label(self._ui.shot_status, self._ui.shot_status_verticalLayout, Qt.ElideRight)
         elide_label(self._ui.running_shot_name, self._ui.shot_status_verticalLayout, Qt.ElideLeft)
-        runmanager_client = RunmanagerClient()
         # The light polls on its own: with requests off the shot loop never
         # contacts runmanager, so it cannot keep the light current.
         self._runmanager_link = LinkIndicator(
-            'runmanager', runmanager_client.host, runmanager_client.port
+            'runmanager',
+            BLACS.exp_config.get('servers', 'runmanager', fallback='localhost'),
+            BLACS.exp_config.getint('ports', 'runmanager', fallback=DEFAULT_PORT),
         )
         self._ui.runmanager_link_layout.addWidget(self._runmanager_link)
         self._runmanager_link.start()
