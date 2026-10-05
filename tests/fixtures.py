@@ -178,5 +178,5 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     # loop running, and a test that wants one puts a started thread here.
     executor.manager = threading.Thread(target=lambda: None)
     # Built but not started: no test here probes a runmanager for the light.
-    executor._runmanager_link = LinkIndicator('runmanager', lambda: None)
+    executor._runmanager_link = LinkIndicator('runmanager', 'localhost', 0)
     return executor
