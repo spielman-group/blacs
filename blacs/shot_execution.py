@@ -406,8 +406,9 @@ class ShotExecutor(object):
         """Write a copy of a shot file with no data from a run in it.
 
         The copy is the same shot, ready to be run: the groups describing the
-        experiment are copied across, anything a run wrote is not, and every
-        root attribute crosses over untouched.
+        experiment are copied across, the data a run wrote is not, and every
+        root attribute crosses over untouched -- the earlier run's ``run time``
+        among them, until this run writes its own.
 
         ``run repeat`` is the one BLACS writes, and the only root attribute it
         has any opinion about: it numbers which execution of the shot this file
