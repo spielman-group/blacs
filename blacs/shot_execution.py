@@ -289,6 +289,21 @@ class ShotExecutor(object):
         bounds the wait."""
         return self._pending_outcome is not None and self.manager.is_alive()
 
+    def name_held_outcome(self):
+        """Log the shot whose outcome runmanager was never told, if one is held."""
+        outcome = self._pending_outcome
+        if outcome is None:
+            return
+        self._logger.warning(
+            'Runmanager was never told that shot %s %s%s.%s',
+            outcome['shot_id'],
+            outcome['status'],
+            ': %s' % outcome['message'] if outcome['message'] else '',
+            ' Its run is in %s.' % path_to_local(outcome['path'])
+            if 'path' in outcome
+            else '',
+        )
+
     def exchange_with_runmanager(self, request_shot, timeout=None):
         """Report the finished shot's outcome, and ask for the next shot.
 
@@ -601,16 +616,7 @@ class ShotExecutor(object):
             self.exchange_with_runmanager(False, timeout=self.OUTCOME_FLUSH_TIMEOUT)
         except Exception:
             self._logger.exception('Could not hand over a held shot outcome.')
-        if self._pending_outcome is None:
-            return
-        self._logger.warning(
-            'Runmanager was never told that shot %s %s%s.',
-            self._pending_outcome['shot_id'],
-            self._pending_outcome['status'],
-            ': %s' % self._pending_outcome['message']
-            if self._pending_outcome['message']
-            else '',
-        )
+        self.name_held_outcome()
 
     def _manage(self):
         logger = logging.getLogger('BLACS.shot_executor.thread')
@@ -651,12 +657,15 @@ class ShotExecutor(object):
                 continue
 
             if path is None:
-                request_shot = self.requesting_shots
                 shot_id = None
                 agnostic_path = None
                 runmanager_paused = False
                 runmanager_pending = False
-                if self.runmanager_alive():
+                runmanager_answered = self.runmanager_alive()
+                # Read after the probe, which can take a while: unticking Request
+                # shots during it stops the request that follows.
+                request_shot = self.requesting_shots
+                if runmanager_answered:
                     # One exchange reports how the last shot turned out and
                     # asks for the next one. There is nothing to acknowledge:
                     # the row stays in runmanager's queue while we run it, so a
@@ -687,7 +696,7 @@ class ShotExecutor(object):
                     runmanager_pending = response['state'] == PROVIDER_PENDING
                 self._current_shot_id = shot_id
 
-                if not agnostic_path and request_shot and not runmanager_pending:
+                if not agnostic_path and self.requesting_shots and not runmanager_pending:
                     local_override_path = str(
                         inmain(self._ui.local_override_lineEdit.text)
                     ).strip()

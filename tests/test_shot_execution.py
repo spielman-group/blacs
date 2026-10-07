@@ -393,6 +393,7 @@ class QuitWaitsForTheFinalReportTests(unittest.TestCase):
             'shot_id': 'shot-1',
             'status': 'completed',
             'message': '',
+            'path': '/tmp/shot_a_rep00001.h5',
         }
         return executor
 
@@ -499,24 +500,33 @@ class QuitWaitsForTheFinalReportTests(unittest.TestCase):
 
     def test_an_outcome_that_could_not_be_delivered_is_named_before_the_exit(self):
         executor = self.executor_holding_an_outcome()
+        answering = threading.Event()
 
         def exchange(request_shot, timeout=None):
-            # Runmanager did not take it, so it is still held:
+            # A runmanager that is not answering, so the outcome stays held:
+            answering.wait()
             return {'state': 'none', 'shot_id': None, 'path': None}, False
 
         executor.exchange_with_runmanager = exchange
         self.start_shot_loop(executor)
+        # Registered after the loop so it is released before it is joined:
+        self.addCleanup(answering.set)
         blacs_app = QuittingBLACS(executor)
 
         with self.assertLogs('test.shot_executor', level='WARNING') as captured:
-            self.quit(blacs_app)
+            self.quit(blacs_app, deadline_in=0.3)
             # Read inside the block, because when the line was written is the
             # whole point: quit() returns the moment BLACS declares itself
             # finished, and the process ends there.
-            named = [line for line in captured.output if 'shot-1' in line]
+            named = [
+                line
+                for line in captured.output
+                if 'shot-1' in line and 'shot_a_rep00001.h5' in line
+            ]
 
         self.assertTrue(
-            named, 'the run that was lost has to be named before BLACS goes'
+            named,
+            'the run that was lost, and its file, have to be named before BLACS goes',
         )
 
 
