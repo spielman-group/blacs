@@ -592,6 +592,10 @@ class BLACS(LabscriptApplication):
             # not answering must not be able to hold the quit open. Nothing to
             # report is nothing to wait for, and the shot itself is not lost
             # either way: it keeps its place in runmanager's queue.
+            if overdue and self.shot_executor.final_report_pending():
+                # The loop has not reached its own report, and the process ends
+                # here: name the run it was holding now.
+                self.shot_executor.name_held_outcome()
             self.exit_complete = True
             logger.info('quitting')
             return

@@ -289,6 +289,21 @@ class ShotExecutor(object):
         bounds the wait."""
         return self._pending_outcome is not None and self.manager.is_alive()
 
+    def name_held_outcome(self):
+        """Log the shot whose outcome runmanager was never told, if one is held."""
+        outcome = self._pending_outcome
+        if outcome is None:
+            return
+        self._logger.warning(
+            'Runmanager was never told that shot %s %s%s.%s',
+            outcome['shot_id'],
+            outcome['status'],
+            ': %s' % outcome['message'] if outcome['message'] else '',
+            ' Its run is in %s.' % path_to_local(outcome['path'])
+            if 'path' in outcome
+            else '',
+        )
+
     def exchange_with_runmanager(self, request_shot, timeout=None):
         """Report the finished shot's outcome, and ask for the next shot.
 
@@ -359,21 +374,11 @@ class ShotExecutor(object):
             if rerun:
                 self._logger.debug('Run file has already been run! Creating a fresh copy to rerun')
                 new_h5_filepath, repeat_number = self.new_rep_name(h5_filepath)
-                # Keep counting up until we get a filename that isn't in the filesystem:
-                while os.path.exists(new_h5_filepath):
-                    new_h5_filepath, repeat_number = self.new_rep_name(new_h5_filepath)
                 success = self.clean_h5_file(h5_filepath, new_h5_filepath, repeat_number=repeat_number)
                 if not success:
                    return None, 'Cannot create a re run of this experiment. Is it a valid run file?'
                 h5_filepath = new_h5_filepath
-                message = "Experiment added successfully: experiment to be re-run\n"
-            else:
-                message = "Experiment added successfully\n"
-            if not self.requesting_shots:
-                message += "Warning: BLACS is not requesting shots\n"
-            if not self.manager_running:
-                message = "Error: Shot execution is not running\n"
-            return h5_filepath, message
+            return h5_filepath, ''
         else:
             # TODO: Parse and display the contents of "error" in a more human readable format for analysis of what is wrong!
             message =  ("Connection table of your file is not a subset of the experimental control apparatus.\n"
@@ -401,8 +406,9 @@ class ShotExecutor(object):
         """Write a copy of a shot file with no data from a run in it.
 
         The copy is the same shot, ready to be run: the groups describing the
-        experiment are copied across, anything a run wrote is not, and every
-        root attribute crosses over untouched.
+        experiment are copied across, the data a run wrote is not, and every
+        root attribute crosses over untouched -- the earlier run's ``run time``
+        among them, until this run writes its own.
 
         ``run repeat`` is the one BLACS writes, and the only root attribute it
         has any opinion about: it numbers which execution of the shot this file
@@ -601,16 +607,7 @@ class ShotExecutor(object):
             self.exchange_with_runmanager(False, timeout=self.OUTCOME_FLUSH_TIMEOUT)
         except Exception:
             self._logger.exception('Could not hand over a held shot outcome.')
-        if self._pending_outcome is None:
-            return
-        self._logger.warning(
-            'Runmanager was never told that shot %s %s%s.',
-            self._pending_outcome['shot_id'],
-            self._pending_outcome['status'],
-            ': %s' % self._pending_outcome['message']
-            if self._pending_outcome['message']
-            else '',
-        )
+        self.name_held_outcome()
 
     def _manage(self):
         logger = logging.getLogger('BLACS.shot_executor.thread')
@@ -633,9 +630,9 @@ class ShotExecutor(object):
         #TODO: put in general configuration
         timeout_limit = 300 #seconds
         self.set_status("Idle")
-        path = None
         
         while self.manager_running:
+            path = None
             # Unchecking Request shots stops the next request, not the shot in
             # hand: a whole shot happens within one pass of this loop, so it
             # finishes before this is read again. An outcome still waiting to
@@ -650,90 +647,92 @@ class ShotExecutor(object):
                 time.sleep(1)
                 continue
 
+            shot_id = None
+            agnostic_path = None
+            runmanager_paused = False
+            runmanager_pending = False
+            runmanager_answered = self.runmanager_alive()
+            # Read after the probe, which can take a while: unticking Request
+            # shots during it stops the request that follows.
+            request_shot = self.requesting_shots
+            if runmanager_answered:
+                # One exchange reports how the last shot turned out and
+                # asks for the next one. There is nothing to acknowledge:
+                # the row stays in runmanager's queue while we run it, so a
+                # reply that never arrives costs a poll rather than a shot.
+                #
+                # This is the only place a shot is ever asked for, and it
+                # is reached only between shots, with the outcome of the
+                # last one in hand. Runmanager's reclaim rests on that: a
+                # request that carries no outcome retiring a row it still
+                # has marked running proves this BLACS is not running it,
+                # so it hands the row out again rather than leaving the
+                # queue stopped behind a reply that went missing. Asking
+                # for work from anywhere else, or while a shot is under
+                # way, breaks that inference and would have one shot handed
+                # out twice.
+                response, _ = self.exchange_with_runmanager(request_shot)
+                shot_id = response['shot_id']
+                agnostic_path = response['path']
+                # A paused runmanager is one whose user has stopped it
+                # offering work, which is nothing to do with whether this
+                # apparatus should be running: we fall through to the local
+                # override shot exactly as for a runmanager with an empty
+                # queue, and say which it was so an operator can see why no
+                # queued work is arriving.
+                runmanager_paused = response['state'] == PROVIDER_PAUSED
+                # Pending is the shot runmanager will offer next, still
+                # compiling: wait for it rather than run ours in the gap.
+                runmanager_pending = response['state'] == PROVIDER_PENDING
+            self._current_shot_id = shot_id
+
+            if not agnostic_path and self.requesting_shots and not runmanager_pending:
+                local_override_path = str(
+                    inmain(self._ui.local_override_lineEdit.text)
+                ).strip()
+                if local_override_path:
+                    agnostic_path = path_to_agnostic(
+                        os.path.abspath(local_override_path)
+                    )
+
+            if not agnostic_path:
+                # A standing local error stays on the status line: this pass
+                # -- the one that delivers that shot's outcome -- would
+                # otherwise wipe it before an operator could read it.
+                if not self.local_error:
+                    self.set_status('Idle')
+                if not request_shot:
+                    self._runmanager_link.show_state(NOT_REQUESTING)
+                elif runmanager_paused:
+                    self._runmanager_link.show_state('Runmanager queue paused')
+                else:
+                    self._runmanager_link.show_state(REQUESTING)
+                time.sleep(1)
+                continue
+
+            path, message = self.process_request(path_to_local(str(agnostic_path)))
             if path is None:
-                request_shot = self.requesting_shots
-                shot_id = None
-                agnostic_path = None
-                runmanager_paused = False
-                runmanager_pending = False
-                if self.runmanager_alive():
-                    # One exchange reports how the last shot turned out and
-                    # asks for the next one. There is nothing to acknowledge:
-                    # the row stays in runmanager's queue while we run it, so a
-                    # reply that never arrives costs a poll rather than a shot.
-                    #
-                    # This is the only place a shot is ever asked for, and it
-                    # is reached only between shots, with the outcome of the
-                    # last one in hand. Runmanager's reclaim rests on that: a
-                    # request that carries no outcome retiring a row it still
-                    # has marked running proves this BLACS is not running it,
-                    # so it hands the row out again rather than leaving the
-                    # queue stopped behind a reply that went missing. Asking
-                    # for work from anywhere else, or while a shot is under
-                    # way, breaks that inference and would have one shot handed
-                    # out twice.
-                    response, _ = self.exchange_with_runmanager(request_shot)
-                    shot_id = response['shot_id']
-                    agnostic_path = response['path']
-                    # A paused runmanager is one whose user has stopped it
-                    # offering work, which is nothing to do with whether this
-                    # apparatus should be running: we fall through to the local
-                    # override shot exactly as for a runmanager with an empty
-                    # queue, and say which it was so an operator can see why no
-                    # queued work is arriving.
-                    runmanager_paused = response['state'] == PROVIDER_PAUSED
-                    # Pending is the shot runmanager will offer next, still
-                    # compiling: wait for it rather than run ours in the gap.
-                    runmanager_pending = response['state'] == PROVIDER_PENDING
-                self._current_shot_id = shot_id
-
-                if not agnostic_path and request_shot and not runmanager_pending:
-                    local_override_path = str(
-                        inmain(self._ui.local_override_lineEdit.text)
-                    ).strip()
-                    if local_override_path:
-                        agnostic_path = path_to_agnostic(
-                            os.path.abspath(local_override_path)
-                        )
-
-                if not agnostic_path:
-                    # A standing local error stays on the status line: this pass
-                    # -- the one that delivers that shot's outcome -- would
-                    # otherwise wipe it before an operator could read it.
-                    if not self.local_error:
-                        self.set_status('Idle')
-                    if not request_shot:
-                        self._runmanager_link.show_state(NOT_REQUESTING)
-                    elif runmanager_paused:
-                        self._runmanager_link.show_state('Runmanager queue paused')
-                    else:
-                        self._runmanager_link.show_state(REQUESTING)
-                    time.sleep(1)
-                    continue
-
-                path, message = self.process_request(path_to_local(str(agnostic_path)))
-                if path is None:
-                    logger.error(message.strip())
-                    if shot_id is not None:
-                        # A shot we cannot read is reported as rejected on the
-                        # next exchange, and that is the whole of our part in
-                        # it. Requests are deliberately left on: the shot is
-                        # unusable, not the apparatus, and stopping here would
-                        # need someone standing at this machine to start it
-                        # again over a file that is runmanager's to fix.
-                        # Runmanager holds the row and stops offering it, so
-                        # the next exchange brings nothing and we run our own
-                        # shot until it is dealt with there.
-                        self.report_shot_outcome(None, 'rejected', message.strip())
-                        self.set_status("Rejected shot from runmanager")
-                    else:
-                        # The local override shot is this machine's own, chosen
-                        # here, and there is no runmanager row to hold it. Stop,
-                        # or retry a shot that cannot be read once a second.
-                        self.set_status("Rejected local override shot\nRequests stopped")
-                        self.stop_requesting_shots(message.strip())
-                    time.sleep(1)
-                    continue
+                logger.error(message.strip())
+                if shot_id is not None:
+                    # A shot we cannot read is reported as rejected on the
+                    # next exchange, and that is the whole of our part in
+                    # it. Requests are deliberately left on: the shot is
+                    # unusable, not the apparatus, and stopping here would
+                    # need someone standing at this machine to start it
+                    # again over a file that is runmanager's to fix.
+                    # Runmanager holds the row and stops offering it, so
+                    # the next exchange brings nothing and we run our own
+                    # shot until it is dealt with there.
+                    self.report_shot_outcome(None, 'rejected', message.strip())
+                    self.set_status("Rejected shot from runmanager")
+                else:
+                    # The local override shot is this machine's own, chosen
+                    # here, and there is no runmanager row to hold it. Stop,
+                    # or retry a shot that cannot be read once a second.
+                    self.set_status("Rejected local override shot\nRequests stopped")
+                    self.stop_requesting_shots(message.strip())
+                time.sleep(1)
+                continue
 
             self.set_status('Preparing shot...', path)
             logger.info('Got a file: %s'%path)
@@ -914,9 +913,6 @@ class ShotExecutor(object):
                     inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                     inmain(self._ui.shot_abort_button.setEnabled,False)
                     
-                    # Runmanager owns the queue and decides what happens to a
-                    # shot we could not run, so do not hold on to it here:
-                    path = None
                     # Start a new iteration
                     continue
                 
@@ -998,12 +994,8 @@ class ShotExecutor(object):
                     self.stop_requesting_shots('Aborted')
                     self.set_status("Aborted\nRequests stopped")
                     self.report_shot_outcome(path, 'aborted', 'Aborted')
-                    path = None
                     
                 if abort or restarted:
-                    # Runmanager owns the queue and decides what happens to a
-                    # shot we could not run, so do not hold on to it here:
-                    path = None
                     # after disabling the abort button, we now start a new iteration
                     continue                
                 
@@ -1029,9 +1021,6 @@ class ShotExecutor(object):
                 inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                 inmain(self._ui.shot_abort_button.setEnabled,False)
                 
-                # Runmanager owns the queue and decides what happens to a
-                # shot we could not run, so do not hold on to it here:
-                path = None
                 # Start a new iteration
                 continue
                              
@@ -1145,9 +1134,6 @@ class ShotExecutor(object):
                 self.reset_failed_shot_file(path)
 
                 self.report_shot_outcome(path, 'failed', reason)
-                # Runmanager owns the queue and decides what happens to a
-                # shot we could not run, so do not hold on to it here:
-                path = None
                 continue
             
             ##########################################################################################################################################
@@ -1167,6 +1153,5 @@ class ShotExecutor(object):
                     logger.exception("Plugin callback raised an exception")
 
             ##########################################################################################################################################
-            path = None
             self.set_status("Idle")
         logger.info('Stopping')
