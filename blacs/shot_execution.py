@@ -10,6 +10,8 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
+"""``docs/source/shot-management.rst`` is the contract of record for the
+runmanager handover, so change either side against it."""
 import queue
 import logging
 import os
