@@ -21,12 +21,9 @@ import labscript_utils.h5_lock, h5py
 from qtutils import inmain_decorator
 
 from labscript_utils.connections import ConnectionTable
+from labscript_utils import ensure_str
 
 logger = logging.getLogger('BLACS.FrontPanelSettings')
-
-def _ensure_str(s):
-    """convert bytestrings and numpy strings to python strings"""
-    return s.decode() if isinstance(s, bytes) else str(s)
 
 class FrontPanelSettings(object):
     def __init__(self,settings_path,connection_table):
@@ -85,10 +82,10 @@ class FrontPanelSettings(object):
                 dataset = hdf5_file['/front_panel'].get('_notebook_data',[])
 
                 for row in dataset:
-                    tab_name = _ensure_str(row['tab_name'])
+                    tab_name = ensure_str(row['tab_name'])
                     tab_data.setdefault(tab_name,{})
                     try:
-                        tab_data[tab_name] = {'notebook':row['notebook'], 'page':row['page'], 'visible':row['visible'], 'data':eval(_ensure_str(row['data']))}
+                        tab_data[tab_name] = {'notebook':row['notebook'], 'page':row['page'], 'visible':row['visible'], 'data':eval(ensure_str(row['data']))}
                     except Exception:
                         logger.info("Could not load tab data for %s"%tab_name)
 
@@ -104,7 +101,7 @@ class FrontPanelSettings(object):
                         data_dict = {}
                         for i in range(len(row)):
                             if isinstance(row[i], bytes) or isinstance(row[i], str):
-                                data_dict[columns[i]] = _ensure_str(row[i])
+                                data_dict[columns[i]] = ensure_str(row[i])
                             else:
                                 data_dict[columns[i]] = row[i]
                         settings,question,error = self.handle_return_code(data_dict,result,settings,question,error)

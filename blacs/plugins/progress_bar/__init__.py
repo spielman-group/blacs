@@ -28,6 +28,7 @@ import h5py
 
 import labscript_utils.properties as properties
 from labscript_utils.connections import ConnectionTable
+from labscript_utils import ensure_str
 from zprocess import TimeoutError
 from labscript_utils.ls_zprocess import Event
 from blacs.plugins import PLUGINS_DIR, callback
@@ -40,11 +41,6 @@ logger = logging.getLogger('BLACS.plugin.%s'%module)
 # times, whichever is soonest after the last update:
 UPDATE_INTERVAL = 0.02
 BAR_MAX = 1000
-
-def _ensure_str(s):
-    """convert bytestrings and numpy strings to python strings"""
-    return s.decode() if isinstance(s, bytes) else str(s)
-
 
 def black_has_good_contrast(r, g, b):
     """Return whether black text or white text would have better contrast on a
@@ -110,7 +106,7 @@ class Plugin(object):
         with h5py.File(self.BLACS['connection_table_h5file'], 'r') as f:
             if 'waits' in f:
                 acq_device = f['waits'].attrs['wait_monitor_acquisition_device']
-                acq_device = _ensure_str(acq_device)
+                acq_device = ensure_str(acq_device)
                 if acq_device:
                     props = properties.get(f, acq_device, 'connection_table_properties')
                     if props.get('wait_monitor_supports_wait_completed_events', False):
@@ -189,7 +185,7 @@ class Plugin(object):
                 marker_index -= 1
                 assert marker_index >= 0
             label, _, color = self.markers[marker_index]
-            self.bar_text_prefix = '[%s] ' % _ensure_str(label)
+            self.bar_text_prefix = '[%s] ' % ensure_str(label)
             r, g, b = color[0]
             if color.dtype == np.uint8 and (r, g, b) == (0, 0, 0):
                 # is old colour spec, in which (0,0,0) meant no colour specified.
@@ -212,7 +208,7 @@ class Plugin(object):
                 wait_index -= 1
                 assert wait_index >= 0
             label = self.waits[wait_index]['label']
-            self.bar_text_prefix = '-%s- ' % _ensure_str(label)
+            self.bar_text_prefix = '-%s- ' % ensure_str(label)
             highlight_text_color = regular_text_color = QtGui.QColor(192, 0, 0)
             bar_color = QtCore.Qt.gray
         if marker or wait:

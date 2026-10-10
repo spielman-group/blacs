@@ -11,7 +11,8 @@ import unittest
 import labscript_utils.h5_lock  # must precede h5py, as it does in BLACS itself
 import h5py
 
-from blacs.front_panel_settings import FrontPanelSettings, _ensure_str
+from blacs.front_panel_settings import FrontPanelSettings
+from labscript_utils import ensure_str
 
 
 def a_front_panel():
@@ -80,15 +81,15 @@ class SaveAndRestoreTests(unittest.TestCase):
             front_panel = h5_file['front_panel/front_panel'][:]
             notebook = h5_file['front_panel/_notebook_data'][:]
 
-        self.assertEqual(_ensure_str(front_panel[0]['name']), 'a channel')
-        self.assertEqual(_ensure_str(front_panel[0]['device_name']), 'fake_device')
-        self.assertEqual(_ensure_str(front_panel[0]['channel']), 'ao0')
+        self.assertEqual(ensure_str(front_panel[0]['name']), 'a channel')
+        self.assertEqual(ensure_str(front_panel[0]['device_name']), 'fake_device')
+        self.assertEqual(ensure_str(front_panel[0]['channel']), 'ao0')
         self.assertEqual(front_panel[0]['base_value'], 1.5)
-        self.assertEqual(_ensure_str(front_panel[0]['current_units']), 'V')
+        self.assertEqual(ensure_str(front_panel[0]['current_units']), 'V')
 
-        self.assertEqual(_ensure_str(notebook[0]['tab_name']), 'fake_device')
-        self.assertEqual(_ensure_str(notebook[0]['notebook']), '1')
-        self.assertEqual(eval(_ensure_str(notebook[0]['data'])), {'a key': 'a value'})
+        self.assertEqual(ensure_str(notebook[0]['tab_name']), 'fake_device')
+        self.assertEqual(ensure_str(notebook[0]['notebook']), '1')
+        self.assertEqual(eval(ensure_str(notebook[0]['data'])), {'a key': 'a value'})
 
     def test_the_saved_strings_are_bytes_as_earlier_versions_wrote_them(self):
         # The dtypes used to be spelled 'a256'/'a2'/'a<n>'. numpy 2.0 removed
