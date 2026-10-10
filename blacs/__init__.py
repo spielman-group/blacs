@@ -11,7 +11,10 @@
 #                                                                   #
 #####################################################################
 import os
-from .__version__ import __version__
+
+from labscript_utils.versions import package_version
+
+__version__ = package_version(__package__)
 
 DESKTOP_APP_MODULE = 'blacs'
 APPLICATION_NAME = 'BLACS'
