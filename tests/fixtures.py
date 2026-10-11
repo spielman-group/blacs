@@ -19,7 +19,6 @@ import logging
 import sys
 import threading
 import types
-import warnings
 
 
 class _SilentSplash(object):
@@ -70,17 +69,8 @@ def _import_blacs_without_starting_it():
     saved = sys.modules.get('labscript_utils.splash')
     sys.modules['labscript_utils.splash'] = fake_splash
     try:
-        with warnings.catch_warnings():
-            # Importing BLACS proper installs labscript_utils.excepthook's
-            # warning logger, which logs through a deprecated call that warns
-            # in turn, so any warning raised while it is installed recurses
-            # until the stack runs out. Nothing here is interested in
-            # import-time warnings, and catch_warnings puts the runner's own
-            # handler back afterwards. Done once, here, so that every module
-            # importing BLACS need not repeat it.
-            warnings.simplefilter('ignore')
-            import blacs.__main__
-            import runmanager.__main__
+        import blacs.__main__
+        import runmanager.__main__
         return blacs.__main__
     finally:
         if saved is None:
