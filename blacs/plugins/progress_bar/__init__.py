@@ -31,6 +31,7 @@ from labscript_utils.connections import ConnectionTable
 from labscript_utils import ensure_str
 from zprocess import TimeoutError
 from labscript_utils.ls_zprocess import Event
+from labscript_utils.qtwidgets.themed_window import best_contrast
 from blacs.plugins import PLUGINS_DIR, callback
 
 name = "Progress Bar"
@@ -41,23 +42,6 @@ logger = logging.getLogger('BLACS.plugin.%s'%module)
 # times, whichever is soonest after the last update:
 UPDATE_INTERVAL = 0.02
 BAR_MAX = 1000
-
-def black_has_good_contrast(r, g, b):
-    """Return whether black text or white text would have better contrast on a
-    background of the given colour, according to W3C recommendations (see
-    https://www.w3.org/TR/WCAG20/). Return True for black or False for
-    white"""
-    cs = []
-    for c in r, g, b:
-        c = c / 255.0
-        if c <= 0.03928:
-            c = c/12.92
-        else:
-            c = ((c+0.055)/1.055) ** 2.4
-        cs.append(c)
-    r, g, b = cs
-    L = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    return L > np.sqrt(1.05 * 0.05) - 0.05
 
 
 class Plugin(object):
@@ -194,10 +178,9 @@ class Plugin(object):
             # in this case.
             if (r, g, b) != (-1, -1, -1):
                 bar_color = QtGui.QColor(r, g, b)
-                if black_has_good_contrast(r, g, b):
-                    highlight_text_color = QtCore.Qt.black
-                else:
-                    highlight_text_color = QtCore.Qt.white
+                highlight_text_color = best_contrast(
+                    bar_color, [QtGui.QColor('black'), QtGui.QColor('white')]
+                )
             else:
                 bar_color = None
                 highlight_text_color = None

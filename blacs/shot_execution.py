@@ -25,7 +25,6 @@ from tempfile import gettempdir
 from binascii import hexlify
 
 from qtutils.qt.QtCore import Qt
-from qtutils.qt.QtWidgets import QFileDialog
 
 import zprocess
 from labscript_utils.ls_zprocess import ProcessTree
@@ -36,6 +35,7 @@ from qtutils import inmain_decorator, inmain
 
 from labscript_utils.qtwidgets.elide_label import elide_label
 from labscript_utils.qtwidgets.link_indicator import LinkIndicator
+import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.connections import ConnectionTable
 from labscript_utils.file_utils import next_available_indexed_filepath
 import labscript_utils.properties
@@ -220,19 +220,15 @@ class ShotExecutor(object):
         self.requesting_shots = False
 
     def browse_local_override(self):
-        shot_file = QFileDialog.getOpenFileName(
+        shot_file = file_dialogs.open_file(
             self._ui,
             'Select shot file',
             self.last_opened_shots_folder,
             'HDF5 files (*.h5 *.hdf5)',
         )
-        if isinstance(shot_file, tuple):
-            shot_file, _ = shot_file
-        shot_file = str(shot_file)
         if not shot_file:
             return
 
-        shot_file = os.path.abspath(shot_file)
         self.last_opened_shots_folder = os.path.dirname(shot_file)
         self._ui.local_override_lineEdit.setText(shot_file)
 

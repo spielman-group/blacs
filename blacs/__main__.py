@@ -41,14 +41,12 @@ WINDOWS = platform.system() == 'Windows'
 # No splash update for Qt - the splash code has already imported it:
 from qtutils import inmain_later, inmain, inthread, UiLoader
 import qtutils.icons  # import has side-effects we rely on
-from qtutils.qt.QtCore import QTimer, Qt, qVersion, QEvent
+from qtutils.qt.QtCore import QTimer, Qt, qVersion
 from qtutils.qt.QtGui import QIcon, QColor, QPalette
 from qtutils.qt.QtWidgets import (
     QMainWindow,
     QMessageBox,
-    QFileDialog,
-    QApplication,
-    QWidget
+    QApplication
 )
 from qtutils.qt import QT_ENV
 PYQT_VERSION_STR = importlib.metadata.version(QT_ENV)
@@ -99,6 +97,8 @@ logger.info(f'BLACS version: {blacs.__version__}')
 from labscript_utils.connections import ConnectionTable
 #Draggable Tab Widget Code
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
+import labscript_utils.qtwidgets.file_dialogs as file_dialogs
+from labscript_utils.qtwidgets.themed_window import ThemedWindow
 # Lab config code
 from labscript_utils.labconfig import LabConfig, LabscriptApplication
 from labscript_utils.plugins import MenuBuilder
@@ -119,7 +119,11 @@ import blacs.plugins as plugins
 from blacs import BLACS_DIR
 
 
-class BLACSWindow(QMainWindow):
+class BLACSWindow(ThemedWindow, QMainWindow):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.themeChanged.connect(self.on_theme_changed)
 
     def closeEvent(self, event):
         if self.blacs.exit_complete:
@@ -145,26 +149,13 @@ class BLACSWindow(QMainWindow):
 
             QTimer.singleShot(100,self.close)
 
-    def changeEvent(self, event):
-        
-        # PaletteChange, not ApplicationPaletteChange -- QWidget.event()
-        # never routes the application-wide event to changeEvent, so a
-        # widget listening for it would never see a theme switch.
-        if (event.type() == QEvent.Type.PaletteChange
-                or event.type() == QEvent.Type.StyleChange):
-
-            for widget in self.findChildren(QWidget):
-                # Complex widgets, like TreeView and TableView require triggering styleSheet and palette updates
-                widget.setStyleSheet(widget.styleSheet())
-                widget.setPalette(widget.palette())
-            # tab header text colors have to be done explicitly by tab
-            # because they use setTabTextColor
-            app = QApplication.instance()
-            self.blacs.update_all_tab_icon_and_text(
-                app.palette().color(QPalette.ColorRole.Text)
-            )
-
-        return super().changeEvent(event)
+    def on_theme_changed(self):
+        # tab header text colors have to be done explicitly by tab
+        # because they use setTabTextColor
+        app = QApplication.instance()
+        self.blacs.update_all_tab_icon_and_text(
+            app.palette().color(QPalette.ColorRole.Text)
+        )
 
 
 class BLACS(LabscriptApplication):
@@ -459,14 +450,13 @@ class BLACS(LabscriptApplication):
             tab.set_tab_icon_and_colour()
 
     def on_load_front_panel(self,*args,**kwargs):
-        # get the file:
-        # create file chooser dialog
-        dialog = QFileDialog(None,"Select file to load", self.exp_config.get('paths','experiment_shot_storage'), "HDF5 files (*.h5 *.hdf5)")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.ExistingFile)
-        if dialog.exec():
-            selected_files = dialog.selectedFiles()
-            filepath = str(selected_files[0])
+        filepath = file_dialogs.open_file(
+            None,
+            "Select file to load",
+            self.exp_config.get('paths', 'experiment_shot_storage'),
+            "HDF5 files (*.h5 *.hdf5)",
+        )
+        if filepath is not None:
             # Qt has this weird behaviour where if you type in the name of a file that exists
             # but does not have the extension you have limited the dialog to, the OK button is greyed out
             # but you can hit enter and the file will be selected.
@@ -504,10 +494,7 @@ class BLACS(LabscriptApplication):
                     message.setIcon(QMessageBox.Information)
                     message.setWindowTitle("BLACS")
                     message.exec()
-                finally:
-                    dialog.deleteLater()
             else:
-                dialog.deleteLater()
                 message = QMessageBox()
                 message.setText("You did not select a file ending with .h5 or .hdf5. Please try again")
                 message.setIcon(QMessageBox.Information)
@@ -605,22 +592,16 @@ class BLACS(LabscriptApplication):
     def on_save_front_panel(self,*args,**kwargs):
         data = self.front_panel_settings.get_save_data()
 
-        # Open save As dialog
-        dialog = QFileDialog(None,"Save BLACS state", self.exp_config.get('paths','experiment_shot_storage'), "HDF5 files (*.h5)")
-        try:
-            dialog.setViewMode(QFileDialog.Detail)
-            dialog.setFileMode(QFileDialog.AnyFile)
-            dialog.setAcceptMode(QFileDialog.AcceptSave)
-
-            if dialog.exec():
-                current_file = str(dialog.selectedFiles()[0])
-                if not current_file.endswith('.h5'):
-                    current_file += '.h5'
-                self.front_panel_settings.save_front_panel_to_h5(current_file,data[0],data[1],data[2],data[3])
-        except Exception:
-            raise
-        finally:
-            dialog.deleteLater()
+        current_file = file_dialogs.save_file(
+            None,
+            "Save BLACS state",
+            self.exp_config.get('paths', 'experiment_shot_storage'),
+            "HDF5 files (*.h5)",
+        )
+        if current_file is not None:
+            if not current_file.endswith('.h5'):
+                current_file += '.h5'
+            self.front_panel_settings.save_front_panel_to_h5(current_file,data[0],data[1],data[2],data[3])
 
     def on_open_preferences(self,*args,**kwargs):
         self.settings.create_dialog()

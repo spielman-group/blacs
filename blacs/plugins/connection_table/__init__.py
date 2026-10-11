@@ -16,7 +16,7 @@ import sys
 
 from qtutils.qt.QtCore import Qt
 from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
-from qtutils.qt.QtWidgets import QFileDialog
+import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 
 from blacs.compile_and_restart import CompileAndRestart
 from labscript_utils.filewatcher import FileWatcher
@@ -392,13 +392,10 @@ class Setting(object):
         pass
         
     def add_global_file(self,*args,**kwargs):
-        # create file chooser dialog
-        dialog = QFileDialog(None,"select globals files", "C:\\", "Globals files (*.toml *.h5 *.hdf5)")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.ExistingFiles)
-        
-        if dialog.exec():
-            selected_files = dialog.selectedFiles()
+        selected_files = file_dialogs.open_files(
+            None, "select globals files", "C:\\", "Globals files (*.toml *.h5 *.hdf5)"
+        )
+        if selected_files is not None:
             for filepath in selected_files:
                 filepath = self.normalize_globals_path(filepath)
                 # Qt has this weird behaviour where if you type in the name of a file that exists
@@ -411,8 +408,6 @@ class Setting(object):
                         self.models['globals'].appendRow(QStandardItem(filepath))
          
             self.views['globals'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['globals_sort_order']))
-            
-        dialog.deleteLater()
             
     def is_filepath_in_store(self,filepath,store):
         for row_index in range(self.models[store].rowCount()):
@@ -429,13 +424,10 @@ class Setting(object):
         self.views['globals'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['globals_sort_order']))
             
     def add_calibration_file(self):
-        # create file chooser dialog
-        dialog = QFileDialog(None,"Select unit conversion scripts", "C:\\", "Python files (*.py *.pyw)")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.ExistingFiles)
-        
-        if dialog.exec():
-            selected_files = dialog.selectedFiles()
+        selected_files = file_dialogs.open_files(
+            None, "Select unit conversion scripts", "C:\\", "Python files (*.py *.pyw)"
+        )
+        if selected_files is not None:
             for filepath in selected_files:
                 filepath = os.path.normpath(filepath)
                 # Qt has this weird behaviour where if you type in the name of a file that exists
@@ -449,25 +441,16 @@ class Setting(object):
          
             self.views['calibrations'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['calibrations_sort_order']))
         
-        dialog.deleteLater()
-        
     def add_calibration_folder(self):
-        # create file chooser dialog
-        dialog = QFileDialog(None,"Select unit conversion folder", "C:\\", "")
-        dialog.setViewMode(QFileDialog.Detail)
-        dialog.setFileMode(QFileDialog.Directory)
-        
-        if dialog.exec():
-            selected_files = dialog.selectedFiles()
-            for filepath in selected_files:
-                filepath = os.path.normpath(filepath)
-                # make sure the path isn't already in the list
-                if not self.is_filepath_in_store(filepath,'calibrations'):
-                    self.models['calibrations'].appendRow(QStandardItem(filepath))
+        filepath = file_dialogs.choose_folder(
+            None, "Select unit conversion folder", "C:\\"
+        )
+        if filepath is not None:
+            # make sure the path isn't already in the list
+            if not self.is_filepath_in_store(filepath,'calibrations'):
+                self.models['calibrations'].appendRow(QStandardItem(filepath))
          
             self.views['calibrations'].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['calibrations_sort_order']))
-        
-        dialog.deleteLater()
     
     def delete_selected_conversion_file(self):
         index_list = self.views['calibrations'].selectedIndexes()
