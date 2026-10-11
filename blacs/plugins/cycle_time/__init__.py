@@ -52,7 +52,7 @@ class Plugin(object):
     def get_save_data(self):
         return {}
     
-    def get_callbacks(self):
+    def get_event_handlers(self):
         return {
             'pre_transition_to_buffered': self.pre_transition_to_buffered,
             'science_starting': self.science_starting,

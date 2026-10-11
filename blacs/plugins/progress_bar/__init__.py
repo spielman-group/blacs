@@ -102,7 +102,7 @@ class Plugin(object):
     def get_save_data(self):
         return {}
     
-    def get_callbacks(self):
+    def get_event_handlers(self):
         return {'science_over': self.on_science_over,
                 'science_starting': self.on_science_starting}
         

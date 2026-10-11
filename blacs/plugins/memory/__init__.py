@@ -37,7 +37,7 @@ class Plugin(object):
     def get_setting_classes(self):
         return []
         
-    def get_callbacks(self):
+    def get_event_handlers(self):
         {}
         
     def set_menu_instance(self,menu):

@@ -127,7 +127,7 @@ class Plugin(object):
     def get_setting_classes(self):
         return [Setting]
         
-    def get_callbacks(self):
+    def get_event_handlers(self):
         return {'settings_changed':self.update_stylesheet}
         
     def update_stylesheet(self):

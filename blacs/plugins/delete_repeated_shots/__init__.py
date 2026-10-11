@@ -81,7 +81,7 @@ class Plugin(object):
         return {'n_shots_to_keep': self.n_shots_to_keep,
                 'delete_queue': self.delete_queue}
     
-    def get_callbacks(self):
+    def get_event_handlers(self):
         return {'shot_complete': self.on_shot_complete}
         
     def on_shot_complete(self, h5_filepath):

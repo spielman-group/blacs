@@ -45,7 +45,7 @@ class Plugin(object):
     def get_setting_classes(self):
         return [Setting]
         
-    def get_callbacks(self):
+    def get_event_handlers(self):
         return {'settings_changed':self.notifications[RecompileNotification].setup_filewatching}
 
     def set_menu_instance(self,menu):
