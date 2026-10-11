@@ -688,7 +688,4 @@ if __name__ == '__main__':
 
     splash.hide()
 
-    def execute_program():
-        qapplication.exec()
-
-    sys.exit(execute_program())
+    sys.exit(qapplication.exec())

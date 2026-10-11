@@ -774,7 +774,7 @@ class ShotExecutor(object):
                 ##########################################################################################################################################
                 #                                                        Plugin callbacks                                                                #
                 ########################################################################################################################################## 
-                for callback in plugins.get_callbacks('pre_transition_to_buffered'):
+                for callback in plugins.manager.get_event_handlers('pre_transition_to_buffered'):
                     try:
                         callback(path)
                     except Exception:
@@ -932,7 +932,7 @@ class ShotExecutor(object):
                 ##########################################################################################################################################
                 #                                                        Plugin callbacks                                                                #
                 ########################################################################################################################################## 
-                for callback in plugins.get_callbacks('science_starting'):
+                for callback in plugins.manager.get_event_handlers('science_starting'):
                     try:
                         callback(path)
                     except Exception:
@@ -1029,7 +1029,7 @@ class ShotExecutor(object):
                 ##########################################################################################################################################
                 #                                                        Plugin callbacks                                                                #
                 ########################################################################################################################################## 
-                for callback in plugins.get_callbacks('science_over'):
+                for callback in plugins.manager.get_event_handlers('science_over'):
                     try:
                         callback(path)
                     except Exception:
@@ -1144,7 +1144,7 @@ class ShotExecutor(object):
             ##########################################################################################################################################
             #                                                        Plugin callbacks                                                                #
             ########################################################################################################################################## 
-            for callback in plugins.get_callbacks('shot_complete'):
+            for callback in plugins.manager.get_event_handlers('shot_complete'):
                 try:
                     callback(path)
                 except Exception:
