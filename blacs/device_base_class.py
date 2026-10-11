@@ -215,7 +215,7 @@ class DeviceTab(Tab):
         calib_params = {}
         if device:
             # get the AO from the connection table, find its calibration details
-            calib_class = device.unit_conversion_class if device.unit_conversion_class != "None" else None
+            calib_class = device.unit_conversion_class
             calib_params = device.unit_conversion_params
         
         # Instantiate the AO object
