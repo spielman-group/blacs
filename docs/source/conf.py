@@ -43,7 +43,6 @@ extensions = [
     "sphinx.ext.autosectionlabel",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
-    "sphinx.ext.todo",
     "sphinx.ext.viewcode",
     "sphinx_rtd_theme",
     "myst_parser",
@@ -103,15 +102,15 @@ intersphinx_mapping = {
     'pyqtgraph': (
         'https://pyqtgraph.readthedocs.io/en/latest/',
         None,
-    ),  # change to stable once v0.11 is published
+    ),
     'matplotlib': ('https://matplotlib.org/stable/', None),
     'h5py': ('https://docs.h5py.org/en/stable/', None),
     'pydaqmx': ('https://pythonhosted.org/PyDAQmx/', None),
     'qt': (
-        'https://riverbankcomputing.com/static/Docs/PyQt5/',
-        'pyqt5-modified-objects.inv',
-    )  # from https://github.com/MSLNZ/msl-qt/blob/master/docs/create_pyqt_objects.py
-    # under MIT License
+        'https://www.riverbankcomputing.com/static/Docs/PyQt6/',
+        'pyqt6-modified-objects.inv',
+    ),  # PyQt6's classes with short aliases, after MSLNZ/msl-qt's
+    # create_pyqt_objects.py (MIT License)
     # TODO
     # desktop-app
     # spinapi/pynivision/etc
@@ -190,18 +189,6 @@ if project != "the labscript suite":
 
 # Make `some code` equivalent to :code:`some code`
 default_role = 'code'
-
-# hide todo notes if on readthedocs and not building the latest
-if os.environ.get('READTHEDOCS') and (
-    os.environ.get('READTHEDOCS_VERSION') != 'latest'
-    or (
-        os.environ.get('READTHEDOCS_PROJECT') == project
-        or os.environ.get('READTHEDOCS_PROJECT') == 'labscriptsuite'
-    )
-):
-    todo_include_todos = False
-else:
-    todo_include_todos = True
 
 # -- Options for HTML output -------------------------------------------------
 
