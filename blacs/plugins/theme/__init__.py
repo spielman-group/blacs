@@ -56,7 +56,7 @@ DigitalOutput:hover:checked {
 
 DigitalOutput:checked:disabled{
    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgba(32,200,32), stop: 1 rgba(32,255,32));
+                                      stop: 0 rgb(32,200,32), stop: 1 rgb(32,255,32));
    border: 1px solid #8f8f91;
    color: #606060;
 }
@@ -76,7 +76,7 @@ InvertedDigitalOutput:hover {
 }
 
 InvertedDigitalOutput:disabled{
-   background-color: rgba(70,100,170);
+   background-color: rgb(70,100,170);
    color: #505050;
 }
 
@@ -95,7 +95,7 @@ InvertedDigitalOutput:hover:checked {
 
 InvertedDigitalOutput:checked:disabled{
    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgba(50,150,221), stop: 1 rgba(32,192,255));
+                                      stop: 0 rgb(50,150,221), stop: 1 rgb(32,192,255));
    border: 1px solid #8f8f91;
    color: #606060;
 }
