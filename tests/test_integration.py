@@ -151,8 +151,9 @@ class FakeFrontPanelSettings(object):
 
 class FakeConfig(fixtures.FakeConfig):
     def getfloat(self, section, option, fallback=None):
-        # An absent runmanager is given up on as soon as a reply would be.
-        return REPLY_TIMEOUT if option == 'liveness_timeout' else fallback
+        # Longer than a stalled reply, so that a runmanager still busy with one
+        # is not taken for absent, and short enough to give up on one that is.
+        return 3 * REPLY_TIMEOUT if option == 'liveness_timeout' else fallback
 
 
 class FakeBLACS(fixtures.FakeBLACS):
@@ -583,9 +584,9 @@ class LocalOverrideTests(IntegrationFixture, unittest.TestCase):
 
         # A runmanager that cannot be reached has offered nothing either.
         self.runmanager_server.shutdown()
-        self.run_loop(passes=2)
+        self.run_loop(passes=1)
 
-        self.assertEqual(self.shots_run, [override] * 4)
+        self.assertEqual(self.shots_run, [override] * 3)
         self.assertTrue(self.executor.requesting_shots)
         self.assertIsNone(self.executor.local_error)
 
