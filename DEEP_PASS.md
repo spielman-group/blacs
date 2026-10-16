@@ -235,7 +235,7 @@ The shot loop and its exchange, over a stand-in runmanager.
 ### tests/test_architecture.py
 
 - `test_blacs_offers_runmanager_nothing_that_changes_it`: the server's
-  `handle_` names. **cut**: attribute names. Ian decides, as it guards a design rule.
+  `handle_` names. **cut**: attribute names. Ian agreed: the rule needs no test, as no test says lyse does not control runmanager.
 
 ### tests/test_status_server.py
 
