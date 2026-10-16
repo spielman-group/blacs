@@ -43,11 +43,6 @@ def a_front_panel():
             'maximized': False,
             'frame_height': 20,
             'frame_width': 2,
-            # store_front_panel_in_h5 also saves the state of whatever runs
-            # shots. Production still calls that key '_queue' and Development
-            # renamed it '_shot_execution'; the fixture carries both, so what
-            # this test pins is the dtypes on either branch and not the rename.
-            '_queue': {},
             '_shot_execution': {},
         },
     }
@@ -90,22 +85,6 @@ class SaveAndRestoreTests(unittest.TestCase):
         self.assertEqual(ensure_str(notebook[0]['tab_name']), 'fake_device')
         self.assertEqual(ensure_str(notebook[0]['notebook']), '1')
         self.assertEqual(eval(ensure_str(notebook[0]['data'])), {'a key': 'a value'})
-
-    def test_the_saved_strings_are_bytes_as_earlier_versions_wrote_them(self):
-        # The dtypes used to be spelled 'a256'/'a2'/'a<n>'. numpy 2.0 removed
-        # that spelling -- and only the spelling: 'a' was an alias for 'S' and
-        # nothing about the bytes on disk changed. Pinning the type is what
-        # says a settings file written before the rename still reads back.
-        self.store()
-
-        with h5py.File(self.path, 'r') as h5_file:
-            front_panel = h5_file['front_panel/front_panel']
-            notebook = h5_file['front_panel/_notebook_data']
-
-            for column in ('name', 'device_name', 'channel', 'current_units'):
-                self.assertEqual(front_panel.dtype[column].kind, 'S', column)
-            for column in ('tab_name', 'notebook', 'data'):
-                self.assertEqual(notebook.dtype[column].kind, 'S', column)
 
 
 if __name__ == '__main__':

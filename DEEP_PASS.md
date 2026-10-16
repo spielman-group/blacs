@@ -124,7 +124,7 @@ without cutting the integration fixture, which is what makes the rest real.
 
 - Test files: 7, plus `fixtures.py` and `conftest.py`. Tests: 68, with 20
   subtests.
-- Marks, per test: keep 12, fix 8, cut 48. Where two tests become one, the second counts as cut.
+- Marks, per test: keep 12, fix 8, cut 48. Where two tests become one, the second counts as cut. Approved by Ian and applied: 20 tests, 1,375 lines (19% of the code). Each rewritten test was seen to fail under a mutation of what it protects.
 
 ### tests/test_integration.py
 

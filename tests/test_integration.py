@@ -13,6 +13,7 @@ tabless ``BLACS`` stand in for so that a whole shot can happen without hardware.
 import os
 import shutil
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -148,8 +149,16 @@ class FakeFrontPanelSettings(object):
         pass
 
 
+class FakeConfig(fixtures.FakeConfig):
+    def getfloat(self, section, option, fallback=None):
+        # An absent runmanager is given up on as soon as a reply would be.
+        return REPLY_TIMEOUT if option == 'liveness_timeout' else fallback
+
+
 class FakeBLACS(fixtures.FakeBLACS):
     """A BLACS with no device tabs, so a shot can run without hardware."""
+
+    exp_config = FakeConfig()
 
     def __init__(self, on_start_run):
         self.front_panel_settings = FakeFrontPanelSettings()
@@ -173,6 +182,16 @@ class IntegrationFixture(object):
         self.runmanager_server = RunmanagerServer.__new__(RunmanagerServer)
         ZMQServer.__init__(self.runmanager_server, bind_address='tcp://127.0.0.1')
         self.addCleanup(self.runmanager_server.shutdown)
+        port = self.runmanager_server.port
+
+        class FixtureRunmanagerClient(RunmanagerClient):
+            # A client BLACS builds for a deadline of its own reaches this
+            # runmanager, not the labconfig's.
+            def __init__(self, timeout=REPLY_TIMEOUT):
+                super().__init__(host='127.0.0.1', port=port, timeout=timeout)
+
+        shot_execution.RunmanagerClient = FixtureRunmanagerClient
+        self.addCleanup(setattr, shot_execution, 'RunmanagerClient', RunmanagerClient)
 
         # What the apparatus does with each shot it is given, in the order the
         # shots reach it. 'completed' runs it through to the end; anything else
@@ -318,6 +337,15 @@ class IntegrationFixture(object):
         self.executor._manager_running = True
         ShotExecutor._manage(self.executor)
 
+    def restart_runmanager_server(self):
+        port = self.runmanager_server.port
+        self.runmanager_server.shutdown()
+        self.runmanager_server = RunmanagerServer.__new__(RunmanagerServer)
+        ZMQServer.__init__(
+            self.runmanager_server, port=port, bind_address='tcp://127.0.0.1'
+        )
+        self.addCleanup(self.runmanager_server.shutdown)
+
     def lose_next_reply(self):
         """Let the next exchange reach runmanager and change its queue, and
         answer only after BLACS has stopped waiting for it."""
@@ -374,22 +402,6 @@ class SuccessfulShotTests(IntegrationFixture, unittest.TestCase):
             [pass_['status']['shot_id'] for pass_ in self.while_running],
             shot_ids,
             'BLACS names the id runmanager offered, unchanged, while it runs',
-        )
-
-    def test_the_completed_shot_is_retired_before_the_next_one_is_chosen(self):
-        # One exchange carries the outcome and the request, and runmanager
-        # applies the outcome first. If it did not, the completed row would
-        # still be at the head and would be offered again.
-        first = self.make_shot_file('shot_a.h5')
-        second = self.make_shot_file('shot_b.h5')
-        self.runmanager.queue_manager.enqueue(
-            [{'path': first, 'compiled': True}, {'path': second, 'compiled': True}]
-        )
-        self.executor.requesting_shots = True
-        self.run_loop(passes=3)
-
-        self.assertEqual(
-            len(self.shots_run), 2, 'no shot was handed out twice'
         )
 
 
@@ -465,6 +477,9 @@ class FailureLatchTests(IntegrationFixture, unittest.TestCase):
             'a shot that did not run is not analysed',
         )
         self.assertEqual(self.shots_run, [shot], 'and no later shot was started')
+        state, _ = blacs_state(self.status_client.get_status())
+        self.assertIn('stopped', state)
+        self.assertIn('Aborted', state, 'runmanager can read why BLACS stopped')
 
         # Asking for shots again acknowledges the error, and runmanager offers
         # the same row back under the same id.
@@ -518,48 +533,29 @@ class RejectedShotTests(IntegrationFixture, unittest.TestCase):
             'and it is not offered again, however many times BLACS asks',
         )
 
-    def test_deleting_the_row_lets_the_queue_go_on(self):
-        shot = self.make_shot_file('shot_a.h5')
-        later = self.make_shot_file('shot_b.h5')
-        self.runmanager.queue_manager.enqueue(
-            [{'path': shot, 'compiled': True}, {'path': later, 'compiled': True}]
-        )
-        self.outcomes = ['H5 file not accessible to Control PC\n']
-        self.executor.requesting_shots = True
-        self.run_loop(passes=2)
 
-        rejected = self.runmanager.rows()[0]
-        self.runmanager.queue_manager.delete_rows([rejected['shot_id']])
-        self.run_loop(passes=2)
+class LocalOverrideTests(IntegrationFixture, unittest.TestCase):
+    """When runmanager offers nothing, BLACS runs its own local override shot.
 
-        self.assertEqual(self.shots_run, [shot, later])
-        self.assertEqual(self.runmanager.rows(), [])
-
-    def test_runmanager_says_what_blacs_reported(self):
-        shot = self.make_shot_file('shot_a.h5')
-        self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
-        self.outcomes = ['Not a valid run file\n']
-
-        self.executor.requesting_shots = True
-        self.run_loop(passes=2)
-
-        self.assertEqual(self.runmanager.rows()[0]['state'], 'rejected')
-        self.assertTrue(
-            self.runmanager.output_box.said('rejected', 'Not a valid run file')
-        )
-
-
-class PausedQueueTests(IntegrationFixture, unittest.TestCase):
-    """A paused runmanager withholds work; it does not stop the apparatus."""
+    That shot is in no runmanager queue, so its completions retire no row and
+    reach no lyse.
+    """
 
     def test_a_paused_queue_leaves_blacs_running_its_own_shot(self):
         queued = self.make_shot_file('shot_a.h5')
         override = self.make_shot_file('override.h5')
         self.runmanager.queue_manager.enqueue([{'path': queued, 'compiled': True}])
         self.runmanager.queue_manager.set_paused(True)
-        self.executor._ui.local_override_lineEdit.setText(override)
 
         self.executor.requesting_shots = True
+        self.run_loop(passes=1)
+        self.assertEqual(
+            link_state(self.executor),
+            'Runmanager queue paused',
+            'the light says why no queued work is arriving',
+        )
+
+        self.executor._ui.local_override_lineEdit.setText(override)
         self.run_loop(passes=2)
 
         self.assertEqual(
@@ -577,32 +573,213 @@ class PausedQueueTests(IntegrationFixture, unittest.TestCase):
             [(queued, '')],
             'the withheld shot is untouched, and is not marked running',
         )
-
-    def test_a_local_override_shot_reaches_neither_runmanager_nor_lyse(self):
-        # BLACS's own keepalive shot is in no runmanager queue, and a
-        # runmanager user could not know it happened. Its completions must not
-        # retire a row or turn up in lyse alongside work someone asked for.
-        override = self.make_shot_file('override.h5')
-        self.executor._ui.local_override_lineEdit.setText(override)
-
-        self.executor.requesting_shots = True
-        self.run_loop(passes=2)
-
-        self.assertEqual(self.shots_run, [override, override])
-        self.assertEqual(
-            self.runmanager.analysis_submission.submitted,
-            [],
-            'a shot of BLACS\'s own is not analysed',
-        )
-        self.assertEqual(
-            self.runmanager.output_box.said('completed'),
-            [],
-            'and runmanager was told nothing about it',
-        )
+        self.assertEqual(self.runmanager.analysis_submission.submitted, [])
+        self.assertEqual(self.runmanager.output_box.said('completed'), [])
         self.assertIsNone(
             self.while_running[0]['status']['shot_id'],
             'nor does BLACS claim it is running a queued shot',
         )
+
+        # A runmanager that cannot be reached has offered nothing either.
+        self.runmanager_server.shutdown()
+        self.run_loop(passes=2)
+
+        self.assertEqual(self.shots_run, [override] * 4)
+        self.assertTrue(self.executor.requesting_shots)
+        self.assertIsNone(self.executor.local_error)
+
+    def test_a_local_override_shot_that_cannot_run_stops_requests_silently(self):
+        override = self.make_shot_file('override.h5')
+        self.executor._ui.local_override_lineEdit.setText(override)
+        self.outcomes = ['Not a valid run file\n']
+
+        self.executor.requesting_shots = True
+        self.run_loop(passes=1)
+
+        self.assertFalse(self.executor.requesting_shots)
+        self.assertIn('Not a valid run file', self.executor.local_error)
+        self.assertIn('Rejected local override shot', self.executor.get_status())
+        self.assertEqual(
+            self.runmanager.output_box.said('rejected'),
+            [],
+            'a local override shot has no row in runmanager to report against',
+        )
+
+
+class RequestShotsOffTests(IntegrationFixture, unittest.TestCase):
+    """With Request shots off, BLACS takes up no new shot."""
+
+    def test_no_shot_is_taken_up_while_not_requesting_shots(self):
+        queued = self.make_shot_file('shot_a.h5')
+        override = self.make_shot_file('override.h5')
+        self.runmanager.queue_manager.enqueue([{'path': queued, 'compiled': True}])
+        self.executor._ui.local_override_lineEdit.setText(override)
+
+        # The loop asks runmanager nothing, so no pass is counted and the
+        # bound on its turns is what stops it.
+        self.run_loop(passes=1)
+
+        self.assertEqual(self.shots_run, [], 'not even the local override shot')
+        self.assertEqual(
+            [(row['path'], row['state']) for row in self.runmanager.rows()],
+            [(queued, '')],
+        )
+        self.assertEqual(link_state(self.executor), 'Not requesting shots')
+
+    def test_the_last_outcome_still_goes_out_after_requests_are_switched_off(self):
+        shot = self.make_shot_file('shot_a.h5')
+        later = self.make_shot_file('shot_b.h5')
+        self.runmanager.queue_manager.enqueue(
+            [{'path': shot, 'compiled': True}, {'path': later, 'compiled': True}]
+        )
+        self.executor.requesting_shots = True
+        self.run_loop(passes=1)
+
+        self.executor.requesting_shots = False
+        self.run_loop(passes=1)
+
+        self.assertEqual(self.shots_run, [shot])
+        self.assertEqual(
+            [(row['path'], row['state']) for row in self.runmanager.rows()],
+            [(later, '')],
+            'the shot that ran is retired, and no other is taken up',
+        )
+        self.assertEqual(
+            [os.path.basename(path) for path in self.runmanager.analysis_submission.submitted],
+            ['shot_a.h5'],
+        )
+
+
+class OutcomeDeliveryTests(IntegrationFixture, unittest.TestCase):
+    def test_an_outcome_that_did_not_get_through_rides_on_the_next_exchange(self):
+        shot = self.make_shot_file('shot_a.h5')
+        self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
+        self.executor.requesting_shots = True
+        # The shot runs, and its outcome waits for the next exchange:
+        self.run_loop(passes=1)
+
+        self.runmanager_server.shutdown()
+        self.run_loop(passes=1)
+        self.restart_runmanager_server()
+        self.run_loop(passes=1)
+
+        self.assertEqual(self.shots_run, [shot])
+        self.assertEqual(self.runmanager.rows(), [], 'runmanager learned it completed')
+        self.assertEqual(len(self.runmanager.analysis_submission.submitted), 1)
+
+
+class RecordingTimer(object):
+    """Stands in for QTimer so the quit poll can be driven by hand.
+
+    finalise_quit reschedules itself on a real timer, which needs an event loop
+    these tests do not run. Holding the callback instead runs the real poll,
+    deadline and all, one pass at a time.
+    """
+
+    def __init__(self):
+        self.scheduled = []
+
+    def singleShot(self, msec, callback):
+        self.scheduled.append(callback)
+
+
+class QuittingBLACS(object):
+    """BLACS's own quit poll, with no tabs and no window."""
+
+    finalise_quit = blacs.__main__.BLACS.finalise_quit
+
+    def __init__(self, shot_executor):
+        self.shot_executor = shot_executor
+        self.tablist = {}
+        self.exit_complete = False
+
+
+class QuitWithAnOutcomeHeldTests(IntegrationFixture, unittest.TestCase):
+    """Quitting BLACS while the shot loop still holds the last shot's outcome.
+
+    The outcome goes out from the loop's own thread on its way out, and that
+    thread is a daemon, so nothing stops the process ending first. These drive
+    BLACS's own finalise_quit poll against the loop running in a thread.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.timer = RecordingTimer()
+        real_timer = blacs.__main__.QTimer
+        blacs.__main__.QTimer = self.timer
+        self.addCleanup(setattr, blacs.__main__, 'QTimer', real_timer)
+
+        self.shot = self.make_shot_file('shot_a.h5')
+        self.runmanager.queue_manager.enqueue([{'path': self.shot, 'compiled': True}])
+        self.executor.requesting_shots = True
+        # The shot runs, and its outcome waits for the next exchange:
+        self.run_loop(passes=1)
+
+    def start_shot_loop(self):
+        executor = self.executor
+
+        def wait_to_be_stopped():
+            while executor._manager_running:
+                time.sleep(0.01)
+            # However it was stopped, the loop takes a moment to get out:
+            time.sleep(0.2)
+
+        executor._manage = wait_to_be_stopped
+        executor._manager_running = True
+        executor.manager = threading.Thread(target=executor.manage, daemon=True)
+        self.addCleanup(executor.manager.join, 5)
+        executor.manager.start()
+
+    def quit(self, deadline_in=2.0):
+        """Drive finalise_quit the way its timer would, until BLACS is done."""
+        blacs_app = QuittingBLACS(self.executor)
+        blacs_app.shot_executor.stop()  # what closeEvent does
+        gave_up_at = time.time() + deadline_in + 2
+        blacs_app.finalise_quit(time.time() + deadline_in, {})
+        while not blacs_app.exit_complete:
+            self.assertTrue(self.timer.scheduled, 'the quit poll stopped polling')
+            self.assertLess(time.time(), gave_up_at, 'BLACS never finished quitting')
+            poll = self.timer.scheduled.pop()
+            time.sleep(0.02)
+            poll()
+
+    def test_a_quit_while_an_outcome_is_held_waits_for_it_to_be_delivered(self):
+        self.start_shot_loop()
+
+        self.quit()
+
+        self.assertEqual(
+            self.runmanager.rows(),
+            [],
+            'BLACS finished quitting only once runmanager had the outcome',
+        )
+        self.assertEqual(len(self.runmanager.analysis_submission.submitted), 1)
+
+    def test_a_runmanager_that_never_answers_cannot_hold_the_quit_open(self):
+        answering = threading.Event()
+
+        def never_answer(*args, **kwargs):
+            answering.wait()
+
+        self.runmanager.queue_exchange = never_answer
+        self.start_shot_loop()
+        # Registered after the loop so it is released before it is joined:
+        self.addCleanup(answering.set)
+
+        started = time.time()
+        self.quit(deadline_in=0.3)
+
+        self.assertLess(
+            time.time() - started,
+            1.5,
+            'an apparatus whose runmanager is not answering can still close BLACS',
+        )
+
+
+def link_state(executor):
+    """What BLACS's runmanager light says, once queued updates land."""
+    QApplication.instance().processEvents()
+    return executor._runmanager_link.state
 
 
 class StatusPullTests(IntegrationFixture, unittest.TestCase):
@@ -630,64 +807,6 @@ class StatusPullTests(IntegrationFixture, unittest.TestCase):
             'and once the shot is over it is asking for another',
         )
 
-    def test_a_blacs_that_comes_back_answers_again(self):
-        self.status_client.get_status()
-
-        port = self.blacs_server.port
-        self.blacs_server.shutdown()
-        with self.assertRaises(Exception):
-            self.status_client.get_status()
-
-        # A restarted BLACS serves on the port runmanager is configured with.
-        self.blacs_server = BlacsServer(port=port, bind_address='tcp://127.0.0.1')
-        self.addCleanup(self.blacs_server.shutdown)
-        self.status_client.get_status()
-
-    def test_the_status_pull_carries_the_reason_blacs_stopped(self):
-        shot = self.make_shot_file('shot_a.h5')
-        self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
-        self.abort_next_shot = True
-
-        self.executor.requesting_shots = True
-        self.run_loop(passes=2)
-
-        state, _ = blacs_state(self.status_client.get_status())
-        self.assertIn('stopped', state)
-        self.assertIn('Aborted', state)
-
-
-class DefaultShotTests(IntegrationFixture, unittest.TestCase):
-    """Work runmanager does on a user's behalf is queue work like any other."""
-
-    def test_a_default_shot_is_a_visible_queue_row_and_reaches_lyse(self):
-        default_shot = self.make_shot_file('default_shot_0.h5')
-        labscript_file = os.path.join(self.directory, 'default.py')
-        open(labscript_file, 'w').close()
-        self.runmanager.default_shot_files = [default_shot]
-        self.runmanager.queue_manager.set_empty_queue_policy(
-            EMPTY_QUEUE_DEFAULT_LABSCRIPT
-        )
-        self.runmanager.queue_manager.set_default_labscript_file(labscript_file)
-
-        self.executor.requesting_shots = True
-        self.run_loop(passes=2)
-
-        self.assertEqual(self.shots_run, [default_shot])
-        self.assertEqual(
-            [(row['path'], row['state']) for row in self.while_running[0]['rows']],
-            [(default_shot, 'running')],
-            'the shot runmanager produced is visible in its queue while it runs',
-        )
-        self.assertTrue(
-            self.while_running[0]['status']['shot_id'],
-            'and it is a queued shot as far as BLACS is concerned',
-        )
-        self.assertEqual(
-            [os.path.basename(path) for path in self.runmanager.analysis_submission.submitted],
-            ['default_shot_0.h5'],
-            'a completed default shot is analysed',
-        )
-        self.assertEqual(self.runmanager.rows(), [])
 
 
 if __name__ == '__main__':

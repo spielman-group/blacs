@@ -65,21 +65,6 @@ class ThemeEventTests(unittest.TestCase):
         self.assertEqual([], escaped)
         self.assertEqual(1, len(self.window.blacs.tab_icon_and_text_calls))
 
-    def test_a_style_change_is_handled(self):
-        escaped = self.send(QEvent.Type.StyleChange)
-        self.assertEqual([], escaped)
-        self.assertEqual(1, len(self.window.blacs.tab_icon_and_text_calls))
-
-    def test_application_palette_change_never_reaches_the_window(self):
-        """ApplicationPaletteChange is delivered to the QApplication, not to
-        any widget. QWidget.event() never routes it to changeEvent, so
-        sending it straight to the window documents why naming it in
-        changeEvent could never have matched anything real.
-        """
-        escaped = self.send(QEvent.Type.ApplicationPaletteChange)
-        self.assertEqual([], escaped)
-        self.assertEqual([], self.window.blacs.tab_icon_and_text_calls)
-
 
 if __name__ == '__main__':
     unittest.main()

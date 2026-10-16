@@ -1,21 +1,13 @@
 """How BLACS's main window divides its space.
 
-The shot controls are a fixed strip: two buttons, a status line and the local
-override selector. They belong above the device tabs, taking the height they
-need and no more. They used to be one half of a vertical splitter, which gave
-them a drag handle, let them be sized to anything, and -- because splitter
-positions are saved with the front panel -- brought whatever they had last been
-dragged to back on every start.
-
-Asserted against the loaded window rather than main.ui read as text: what an
-operator meets is the window Qt builds, and a main.ui that will not load is a
-BLACS that will not start.
+The shot controls are a fixed strip above the device tabs, taking the height
+they need; the device tabs get the rest. Asserted against the loaded window,
+since that is what an operator meets.
 """
 import os
 import unittest
 
 from qtutils import UiLoader
-from qtutils.qt.QtCore import QObject
 from qtutils.qt.QtWidgets import QApplication, QSplitter, QWidget
 
 import blacs
@@ -54,45 +46,6 @@ class MainWindowLayoutTests(unittest.TestCase):
         tabs = self.ui.findChild(QSplitter, 'tab_horizontal_splitter')
         self.assertIsNotNone(tabs, 'the device tab area')
         return tabs
-
-    def test_the_window_loads_with_the_controls_blacs_reaches_for(self):
-        # Every one of these is looked up by name at startup, so losing one is
-        # a BLACS that raises on the way up rather than a window that looks odd.
-        for name in (
-            'shot_request_button',
-            'shot_abort_button',
-            'shot_status',
-            'running_shot_name',
-            'runmanager_link_layout',
-            'local_override_lineEdit',
-            'local_override_browse_button',
-        ):
-            self.assertIsNotNone(
-                self.ui.findChild(QObject, name), '%s is looked up by name' % name
-            )
-
-    def test_the_shot_controls_are_not_in_a_splitter(self):
-        self.assertNotIsInstance(
-            self.shot_controls().parent(),
-            QSplitter,
-            'a splitter would give the shot controls a drag handle',
-        )
-        self.assertIsNone(
-            self.ui.findChild(QSplitter, 'main_splitter'),
-            'the splitter that used to hold them has nothing left to split',
-        )
-
-    def test_the_shot_controls_take_the_height_they_need_and_no_more(self):
-        self.ui.resize(900, 700)
-        QApplication.instance().processEvents()
-
-        strip = self.shot_controls()
-        self.assertAlmostEqual(
-            strip.height(),
-            strip.sizeHint().height(),
-            delta=1,
-            msg='the strip should sit at its own size hint',
-        )
 
     def test_the_device_tabs_get_the_rest_of_the_window(self):
         strip, tabs = self.shot_controls(), self.tabs()
