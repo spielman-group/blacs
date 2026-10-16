@@ -33,7 +33,6 @@ splash.update_text('importing standard library modules')
 import subprocess
 import sys
 import time
-from pathlib import Path
 import platform
 import importlib.metadata
 WINDOWS = platform.system() == 'Windows'
@@ -99,7 +98,7 @@ from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
 # Lab config code
-from labscript_utils.labconfig import LabConfig, LabscriptApplication
+from labscript_utils.labconfig import LabConfig, LabscriptApplication, get_default_appconfig_file
 from labscript_utils.plugins import MenuContext
 from labscript_profile import hostname
 # Shot execution code
@@ -647,10 +646,9 @@ if __name__ == '__main__':
         "ports": ["blacs", "lyse"],
     }
     exp_config = LabConfig(required_params=required_config_params)
-    settings_dir = Path(exp_config.get('default', 'app_saved_configs'), 'blacs')
-    if not settings_dir.exists():
-        os.makedirs(settings_dir, exist_ok=True)
-    settings_path = str(settings_dir / f'{hostname()}_BLACS.h5')
+    settings_path = get_default_appconfig_file(
+        exp_config, 'blacs', f'{hostname()}_BLACS.h5', ensure_directory=True
+    )
 
     port = int(exp_config.get('ports', 'blacs'))
 

@@ -19,6 +19,7 @@ from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 
 from blacs.compile_and_restart import CompileAndRestart
+from runmanager.globals_file import default_toml_path
 from labscript_utils.filewatcher import FileWatcher
 from labscript_utils.text_editor import open_in_editor
 from qtutils import inmain, UiLoader
@@ -252,9 +253,8 @@ class Setting(object):
 
     def normalize_globals_path(self, filepath):
         filepath = os.path.normpath(str(filepath))
-        root, ext = os.path.splitext(filepath)
-        if ext.lower() in ('.h5', '.hdf5'):
-            return root + '.toml'
+        if os.path.splitext(filepath)[1].lower() in ('.h5', '.hdf5'):
+            return default_toml_path(filepath)
         return filepath
         
     # Create the page, return the page and an icon to use on the label (the class name attribute will be used for the label text)   

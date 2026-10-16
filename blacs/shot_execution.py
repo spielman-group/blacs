@@ -21,8 +21,7 @@ import datetime
 import sys
 import shutil
 from collections import defaultdict, namedtuple
-from tempfile import gettempdir
-from binascii import hexlify
+import tempfile
 
 from qtutils.qt.QtCore import Qt
 
@@ -86,12 +85,6 @@ NOT_REQUESTING = 'Not requesting shots'
 # One value because it is written on the GUI thread and read on the server
 # thread without a lock -- see set_status().
 PublishedStatus = namedtuple('PublishedStatus', ['text', 'shot_filepath', 'shot_id'])
-
-
-def tempfilename(prefix='BLACS-temp-', suffix='.h5'):
-    """Return a filepath appropriate for use as a temporary file"""
-    random_hex = hexlify(os.urandom(16)).decode()
-    return os.path.join(gettempdir(), prefix + random_hex + suffix)
 
 
 class ShotExecutor(object):
@@ -459,7 +452,8 @@ class ShotExecutor(object):
         try:
             with h5py.File(path, 'r') as h5_file:
                 repeat_number = h5_file.attrs.get('run repeat', 0)
-            temp_path = tempfilename()
+            handle, temp_path = tempfile.mkstemp(prefix='BLACS-temp-', suffix='.h5')
+            os.close(handle)
             self.clean_h5_file(path, temp_path, repeat_number=repeat_number)
             try:
                 shutil.move(temp_path, path)
