@@ -459,7 +459,6 @@ class DeviceTab(Tab):
                 if output is None:
                     raise RuntimeError('The channel %s on device %s is in the last programmed values, but is not in the AO, DO or DDS output store. Something has gone badly wrong!'%(channel,self.device_name))
                 else:                    
-                    # TODO: Only do this if the front panel values match what we asked to program (eg, the user hasn't changed the value since)
                     if output.value == self._last_programmed_values[channel]:
                         output.set_value(remote_value,program=False)
             
@@ -496,9 +495,7 @@ class DeviceTab(Tab):
             # using layout.removeItem/removeWidget causes the layout to still draw the old item in its original space, and
             # then draw new items over the top of the old. Very odd behaviour, could be a windows 8 bug I suppose!
             item.widget().setParent(None)
-            #TODO: somehow maintain the state of the radio buttons for specific channels between refreshes of this changed dialog.
             
-        # TODO: Use the proper sort algorithm as defined for placing widgets to order this prompt
         # We expect a dictionary of channel:value pairs
         for channel in sorted(self._last_remote_values):
             remote_value = self._last_remote_values[channel]
@@ -586,10 +583,6 @@ class DeviceTab(Tab):
                 self._changed_radio_buttons[channel] = ui.use_remote_values
                 
         if overall_changed:
-            # TODO: Disable all widgets for this device, including virtual device widgets...how do I do that?????
-            # Probably need to add a disable/enable method to analog/digital/DDS widgets that disables the widget and is orthogonal to the lock/unlock system
-            # Should probably set a tooltip on the widgets too explaining why they are disabled!
-            # self._device_widget.setSensitive(False)
             # show the remote_values_change dialog
             self._changed_widget.show()
         

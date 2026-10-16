@@ -208,7 +208,6 @@ def define_state(allowed_modes,queue_state_indefinitely,delete_stale_states=Fals
             'MODE_TRANSITION_TO_BUFFERED, MODE_TRANSITION_TO_MANUAL and MODE_BUFFERED (or-ed together using the | symbol, eg MODE_MANUAL|MODE_BUFFERED')
         def f(self,*args,**kwargs):
             function.__name__ = escapedname
-            #setattr(self,escapedname,function)
             self.event_queue.put(allowed_modes,queue_state_indefinitely,delete_stale_states,[function,[args,kwargs]])
         f.__name__ = unescaped_name
         f._allowed_modes = allowed_modes
@@ -390,8 +389,6 @@ class Tab(object):
     @error_message.setter
     @inmain_decorator(True)
     def error_message(self,message):
-        #print message
-        #print self._error
         if message != self._error:
             self._error = message
             self._update_error_and_tab_icon()
@@ -402,7 +399,6 @@ class Tab(object):
         and text colour on the tab"""
         prefix = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">\n<html><head><meta name="qrichtext" content="1" /><style type="text/css">\np, li { white-space: pre-wrap; }\n</style></head><body style=" font-family:"MS Shell Dlg 2"; font-size:7.8pt; font-weight:400; font-style:normal;">'
         suffix = '</body></html>'
-        #print threading.current_thread().name
         self._ui.error_message.setHtml(prefix+self._not_responding_error_message+self._error+suffix)
         if self._error or self._not_responding_error_message:
             self._ui.notresponding.show()
@@ -616,7 +612,6 @@ class Tab(object):
         self.notebook = self._ui.parentWidget().parentWidget()
         currentpage = None
         if self.notebook:
-            #currentpage = self.notebook.get_current_page()
             currentpage = self.notebook.indexOf(self._ui)
             self.notebook.removeTab(currentpage)
             temp_widget = QLabel("Waiting for tab mainloop and worker(s) to exit")
@@ -780,7 +775,6 @@ class Tab(object):
                 logger.debug('Processing event %s' % func.__name__)
                 self.state = '%s (GUI)'%func.__name__
                 # Run the task with the GUI lock, catching any exceptions:
-                #func = getattr(self,funcname)
                 # run the function in the Qt main thread
                 generator = inmain(func,self,*args,**kwargs)
                 # Do any work that was queued up:(we only talk to the worker if work has been queued up through the yield command)
@@ -997,7 +991,6 @@ class PluginTab(object):
         self.notebook = self._ui.parentWidget().parentWidget()
         currentpage = None
         if self.notebook:
-            #currentpage = self.notebook.get_current_page()
             currentpage = self.notebook.indexOf(self._ui)
             self.notebook.removeTab(currentpage)
             temp_widget = QWidget()
@@ -1062,7 +1055,6 @@ class MyTab(Tab):
         self.checkbutton = QPushButton('have baz\nreturn a Queue')
         self.checkbutton.setCheckable(True)
         
-        #self.device_widget.addWidget(layout)
         self.layout.addWidget(foobutton)
         self.layout.addWidget(barbutton)
         self.layout.addWidget(bazbutton)
@@ -1091,7 +1083,6 @@ class MyTab(Tab):
     @define_state(MODE_MANUAL,True)  
     def foo(self,button=None):
         self.logger.debug('entered foo')
-        #self.toplevel.set_sensitive(False)
         # Here's how you instruct the worker process to do
         # something. When this callback returns, the worker will be
         # requested to do whatever you ask in queue_work (in this
@@ -1101,7 +1092,6 @@ class MyTab(Tab):
         # (in this case self.leave_foo(1,2,3,bar=baz) ).
         results = yield(self.queue_work('My worker','foo', 5,6,7,x='x'))
 
-        #self.toplevel.set_sensitive(True)
         self.logger.debug('leaving foo')
     
     # Here's what's NOT to do: forgetting to decorate a callback with @define_state

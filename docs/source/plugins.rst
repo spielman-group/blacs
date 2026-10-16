@@ -6,7 +6,7 @@ covered by a device implementation) in the form of plugins. Plugins allow custom
 interfaces to be created through the addition of menu items, notifications, preferences editable
 through a common preferences panel, and custom tabs that sit alongside device tabs.
 Plugins are also provided access to a variety of internal BLACS objects, such as the shot
-queue, and can register callback functions to be run when certain events happen (such as a
+executor, and can register callback functions to be run when certain events happen (such as a
 shot completing). This provides a powerful basis for customising the behaviour of BLACS
 in a way that is both modular and maintainable, providing a way to include optional conflicting
 features without needing to resolve the incompatibility. Plugins can be easily shared

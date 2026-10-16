@@ -143,7 +143,6 @@ class AO(object):
             if self._calibration and unit in self._calibration.derived_units:
                 return getattr(self._calibration,unit+"_to_base")(value)
              
-            # TODO: include device name somehow, and also the calibration class name
             raise RuntimeError('The value %s (%s) could not be converted to base units because the hardware channel %s, named %s, either does not have a unit conversion class or the unit specified was invalid'%(str(value),unit,self._hardware_name,self._connection_name))
         else:
             return value
@@ -153,7 +152,6 @@ class AO(object):
             if self._calibration and unit in self._calibration.derived_units:
                 return getattr(self._calibration,unit+"_from_base")(value)
         
-            # TODO: include device name somehow, and also the calibration class name
             raise RuntimeError('The value %s (%s) could not be converted to base units because the hardware channel %s, named %s, either does not have a unit conversion class or the unit specified was invalid'%(str(value),unit,self._hardware_name,self._connection_name))
         else:
             return value
@@ -281,7 +279,6 @@ class AO(object):
     def remove_widget(self,widget,call_set_AO = True,new_AO = None):
         if widget not in self._widgets:
             raise RuntimeError('The widget cannot be removed because it is not registered with this AO object')
-            #TODO: Make the above error message better!
          
         self._widgets.remove(widget)  
         
@@ -405,7 +402,6 @@ class AO(object):
         
         self._logger.debug('step_size in base units: %f'%self._step_size)
         
-        #self._current_step_size = self._step_size
         self._settings['base_step_size'] = self._step_size
         
         # now convert to current units
@@ -511,7 +507,6 @@ class DO(object):
         
     def remove_widget(self,widget):
         if widget not in self._widget_list:
-            # TODO: Make this error better!
             raise RuntimeError('The widget specified was not part of the DO object')
         widget.toggled.disconnect(self.set_value)
         self._widget_list.remove(widget)
@@ -633,7 +628,6 @@ class Image(object):
         
     def remove_widget(self, widget):
         if widget not in self._widget_list:
-            # TODO: Make this error better!
             raise RuntimeError('The widget specified was not part of the Image object')
         widget.imageUpdated.disconnect(self.set_value)
         self._widget_list.remove(widget)
@@ -723,7 +717,6 @@ class DDS(object):
         
     def remove_widget(self,widget):
         if widget not in self._widget_list:
-            # TODO: Make this error better!
             raise RuntimeError('The widget specified was not part of the DDS object')
         
         for subchnl in self._sub_channel_list:
@@ -1008,7 +1001,6 @@ if __name__ == '__main__':
     toolpalette2.addWidget(analog1)
     toolpalette2.addWidget(analog2)
     
-    # TODO: Add in test case for DDS
 
     # Create EO object
     test_options = ['option 1','option 2']

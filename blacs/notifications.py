@@ -36,7 +36,6 @@ class Notifications(object):
         
         try:
             # instantiate the notification class
-            # TODO: Do we need to pass anything in here?
             self._notifications[notification_class] = notification_class(self._BLACS) 
             
             # get the widget
@@ -77,9 +76,7 @@ class Notifications(object):
                 logger.warning('"Shown" callback for notification class %s is not callable (and will not be called when the notification is closed. The callback specified was %s.'%(notification_class,properties['shown_callback']))
                         
             
-            #TODO: Make the minimized widget
             ui2 = UiLoader().load(os.path.join(BLACS_DIR, 'notification_minimized_widget.ui'))
-            #ui2.hide()
             if not hasattr(self._notifications[notification_class], 'name'):
                 self._notifications[notification_class].name = notification_class.__name__
             ui2.name.setText(self._notifications[notification_class].name)
@@ -96,7 +93,6 @@ class Notifications(object):
         except Exception:
             logger.exception('Failed to instantiate Notification class %s.'%notification_class)
             # Cleanup 
-            # TODO: cleanup a little more
             if notification_class in self._notifications:
                 del self._notifications[notification_class]
             return False

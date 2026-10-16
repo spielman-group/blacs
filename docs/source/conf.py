@@ -111,9 +111,6 @@ intersphinx_mapping = {
         'pyqt6-modified-objects.inv',
     ),  # PyQt6's classes with short aliases, after MSLNZ/msl-qt's
     # create_pyqt_objects.py (MIT License)
-    # TODO
-    # desktop-app
-    # spinapi/pynivision/etc
 }
 
 # list of all labscript suite components that have docs

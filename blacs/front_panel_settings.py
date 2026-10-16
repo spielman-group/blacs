@@ -67,7 +67,6 @@ class FrontPanelSettings(object):
             if 'connection table' not in h5file:
                 logger.info('Front panel settings connection table not found!')
 
-                # TODO: tab_data will be passed into restore_window next, populate this  
                 return settings, question, error, tab_data
                 
         try:
@@ -105,6 +104,19 @@ class FrontPanelSettings(object):
         except Exception as e:
             logger.info("Could not load saved settings")
             logger.info(str(e))
+        not_restored = [
+            f'{name} ({reason})' for name, (row, reason) in error.items()
+        ] + [
+            f'{device} {port} (now connected)'
+            for device, ports in question.items()
+            for port in ports
+        ]
+        if not_restored:
+            logger.warning(
+                'Front panel values in %s not restored: %s',
+                self.settings_path,
+                ', '.join(not_restored),
+            )
         return settings,question,error,tab_data
 
     def handle_return_code(self,row,result,settings,question,error):
@@ -310,7 +322,6 @@ class FrontPanelSettings(object):
                 if data != {}:
                     if isinstance(data['base_value'], (str, bytes)):
                         logger.warning('Could not save data for channel %s on device %s because support for output values that are strings is not yet supported.'%(hardware_name, device_name))
-                        # TODO: Implement saving of Image output type
                     elif float(data['base_value']) == data['base_value']:
                         front_panel_list.append((data['name'],
                                                  device_name,

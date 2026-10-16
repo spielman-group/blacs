@@ -112,7 +112,6 @@ from blacs.front_panel_settings import FrontPanelSettings
 from blacs.notifications import Notifications
 # Preferences system
 from labscript_utils.settings import Settings
-#import settings_pages
 import blacs.plugins as plugins
 
 from blacs import BLACS_DIR
@@ -174,15 +173,12 @@ class BLACS(LabscriptGuiApplication):
     def __init__(self,application):
         splash.update_text('loading graphical interface')
         self.qt_application = application
-        #self.qt_application.aboutToQuit.connect(self.destroy)
         self._relaunch = False
         self.exiting = False
         self.exit_complete = False
 
         logger.info('Loading BLACS ui')
-        #self.ui = BLACSWindow(self).ui
         loader = UiLoader()
-        #loader.registerCustomPromotion('BLACS',BLACSWindow)
         self.ui = loader.load(os.path.join(BLACS_DIR, 'main.ui'), BLACSWindow())
         logger.info('BLACS ui loaded')
         self.ui.blacs=self
@@ -208,8 +204,6 @@ class BLACS(LabscriptGuiApplication):
         self.front_panel_settings = FrontPanelSettings(self.settings_path, self.connection_table)
         self.front_panel_settings.setup(self)
         settings,question,error,tab_data = self.front_panel_settings.restore()
-
-        # TODO: handle question/error cases
 
         logger.info('restoring window data')
         self.restore_window(tab_data)
@@ -413,14 +407,12 @@ class BLACS(LabscriptGuiApplication):
             # So we must check the extension of each file here!
             if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
                 try:
-                    # TODO: Warn that this will restore values, but not channels that are locked
                     if self.question_dialog("""Warning: This will modify front panel values and cause device output values to update.
                     \nShot execution state will be replaced.
                     \n
                     \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?"""):
                         front_panel_settings = FrontPanelSettings(filepath, self.connection_table)
                         settings,question,error,tab_data = front_panel_settings.restore()
-                        #TODO: handle question/error
 
                         # Restore window data
                         self.restore_window(tab_data)
@@ -446,10 +438,6 @@ class BLACS(LabscriptGuiApplication):
             message = ('Save data from broken tabs? \n Broken tabs are: \n {}'.format(list(self.failed_device_settings.keys())))
             if self.question_dialog(message):
                 data[0].update(self.failed_device_settings)
-
-        # with h5py.File(self.settings_path,'r+') as h5file:
-           # if 'connection table' in h5file:
-               # del h5file['connection table']
 
         self.front_panel_settings.save_front_panel_to_h5(self.settings_path,data[0],data[1],data[2],data[3],{"overwrite":True},force_new_conn_table=True)
         logger.info('Shutting down workers')

@@ -20,6 +20,13 @@ BLACS is also readily extensible using a plugin system, discussed in :doc:`plugi
     shot-management
     plugins
 
+Possible improvements
+---------------------
+
+* Output values that are strings are not saved with the front panel.
+* When a shot's connection table is not a subset of the apparatus's, BLACS
+  rejects the shot but does not say which connections differ.
+
 .. rubric:: Footnotes
 
 .. [1] Documentation taken from Phillip T. Starkey *A software framework for control and automation of precisely timed experiments*

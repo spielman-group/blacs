@@ -364,7 +364,6 @@ class ShotExecutor(object):
                 h5_filepath = new_h5_filepath
             return h5_filepath, ''
         else:
-            # TODO: Parse and display the contents of "error" in a more human readable format for analysis of what is wrong!
             message =  ("Connection table of your file is not a subset of the experimental control apparatus.\n"
                        "You may have:\n"
                        "    Submitted your file to the wrong control PC\n"
@@ -615,7 +614,6 @@ class ShotExecutor(object):
         # the user.
         self.notify_queue = queue.Queue()
 
-        #TODO: put in general configuration
         timeout_limit = 300 #seconds
         self.set_status("Idle")
         
@@ -920,7 +918,6 @@ class ShotExecutor(object):
                 ########################################################################################################################################## 
                 plugins.manager.fire_event('science_starting', path)
 
-                #TODO: fix potential race condition if BLACS is closing when this line executes?
                 self.BLACS.tablist[self.master_pseudoclock].start_run(
                     experiment_finished_notifications
                 )

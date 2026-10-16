@@ -19,12 +19,6 @@ class Plugin(BasePlugin):
     def get_ui_contributions(self):
         return [{'context': 'settings', 'page': Setting}]
 
-# class Menu(object):
-    # pass
-    
-# class Notification(object):
-    # pass
-
 
 class Setting(object):
     name = "General"
@@ -59,7 +53,6 @@ class Setting(object):
     def save(self):
         # transfer the contents of the list store into the data store, and then return the data store
         for var in self.var_list:
-            # TODO: Make more general than forcing type to string
             self.data[var[0]] = str(getattr(self.widgets[var[0]],var[2])())
         
         return self.data
