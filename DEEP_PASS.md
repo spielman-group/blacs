@@ -203,3 +203,21 @@ Both go with the front-panel move onto the application configuration.
 - `test_the_shot_controls_are_not_in_a_splitter`: **cut**: structure; the
   keep above covers what an operator sees.
 - `test_the_shot_controls_take_the_height_they_need_and_no_more`: **cut**: as above.
+
+## Settled inputs
+
+From `issues/seen_while_mapping.md` (blacs section) and Ian, as relayed by the
+coordinator.
+
+- **Transition to manual** waits until every pseudoclock has finished. This pass
+  chooses the mechanism by comparing a labscript compile-time change, a block in
+  blacs, and any other option.
+- **The front panel's state** moves off its HDF5 file onto
+  `LabscriptGuiApplication`'s configuration save and window restore, as lyse,
+  runmanager and runviewer use.
+- **The old HDF5 front-panel file** is still read when no TOML configuration
+  exists, once, after which the state is saved as TOML. That path is marked as
+  labscript-utils' INI fallback is (`labconfig.py:261`): the comment
+  `# LEGACY HDF5 FRONT PANEL COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.`,
+  and a `warnings.warn(..., FutureWarning)` when the old file is actually read,
+  saying it will be converted to TOML.
