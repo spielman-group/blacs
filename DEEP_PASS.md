@@ -355,3 +355,26 @@ capability index, and by grep in every repo.
   keeps its HDF5 save files (Ian).
 - `CompileAndRestart` already uses the shared `OutputBox` and runmanager's
   compile. `runmanager_rpc` and the notifications have no second copy.
+
+## Step 2.3: root causes
+
+Every guard the fork added, in `CodeHealth` against `master`, traced to what
+it guards against. Guards at a real boundary (the network to runmanager, the
+shot loop's thread, start-up restore, a dialog cancelled) are not candidates.
+
+### Candidates
+
+| # | Guard | Where | Cause | Proposal | Size |
+| --- | --- | --- | --- | --- | --- |
+| R1 | A reply from runmanager that is not a dict counts as "nothing offered", and each field is read with a fallback | `exchange_with_runmanager` | None in the suite: every path of runmanager's `queue_exchange` and `offer_shot` returns `{'state', 'shot_id', 'path'}`, and a raised error reaches BLACS as an unreachable runmanager | Read the reply's fields directly. A malformed reply then stops the shot loop visibly, where today it is silent. `shot-management.rst` loses "or its reply could not be read" | blacs −5, docs −2 |
+| R2 | Closing the window skips shutting the server down if there is no server yet | `BLACSWindow.closeEvent`, with the module global `blacs_server = None` | The server is created after `BLACS()` returns, because its handler reads the global `app`; the window is already shown, and the splash's `update_text` processes events in between | `BlacsServer` is given the BLACS it reports on, and is created at the end of `BLACS.__init__`, just before the window is shown; `closeEvent` shuts down `self.blacs.server`. The `None` guard and the global go | blacs −8 +6, test fixture ±2 |
+
+### Not candidates
+
+- `runmanager_rpc`'s catch and log-once, `manage()`'s catch, and the held outcome's
+  delivery on the way out: boundaries, stated in `shot-management.rst`.
+- `reset_failed_shot_file`'s swallowed errors and its `_retry` name: upstream's.
+- `_restore_shot_execution_data`'s `queue_data` key and `NameError` catch: a
+  compatibility leftover, for step 4.
+- The connection table plugin's `settings_changed` handler, which reads its
+  notification only once setup is complete: nothing fires before then.
