@@ -37,8 +37,6 @@ class FrontPanelSettings(object):
         self.tablist = blacs.tablist
         self.attached_devices = blacs.attached_devices
         self.notebook = blacs.tab_widgets
-        self.window = blacs.ui
-        self.panes = blacs.panes
         self.blacs = blacs
 
     def restore(self):
@@ -200,7 +198,6 @@ class FrontPanelSettings(object):
     def get_save_data(self):
         tab_data = {}
         notebook_data = {}
-        window_data = {}
 
         # iterate over all tabs
         for device_name,tab in self.tablist.items():
@@ -226,20 +223,10 @@ class FrontPanelSettings(object):
 
         plugin_data = plugins.manager.get_save_data()
 
-        # save window data
-        # Size of window
-        window_data["_main_window"] = {"width":self.window.normalGeometry().width(),
-                                       "height":self.window.normalGeometry().height(),
-                                       "xpos":self.window.normalGeometry().x(),
-                                       "ypos":self.window.normalGeometry().y(),
-                                       "maximized":self.window.isMaximized(),
-                                       "frame_height":abs(self.window.frameGeometry().height()-self.window.normalGeometry().height()),
-                                       "frame_width":abs(self.window.frameGeometry().width()-self.window.normalGeometry().width()),
-                                       "_shot_execution":self.blacs.shot_executor.get_save_data(),
-                                      }
-        # Pane positions
-        for name,pane in self.panes.items():
-            window_data[name] = pane.sizes()
+        window_data = {
+            'geometry': self.blacs.geometry_save_data(),
+            '_shot_execution': self.blacs.shot_executor.get_save_data(),
+        }
 
         return tab_data,notebook_data,window_data,plugin_data
 
@@ -318,7 +305,7 @@ class FrontPanelSettings(object):
                 self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table=True)
 
     @inmain_decorator(wait_for_return=True)
-    def store_front_panel_in_h5(self, hdf5_file,tab_data,notebook_data,window_data,plugin_data,save_conn_table=False,save_shot_execution_data=True):
+    def store_front_panel_in_h5(self, hdf5_file,tab_data,notebook_data,window_data,plugin_data,save_conn_table=False,shot_file=False):
         if save_conn_table:
             if 'connection table' in hdf5_file:
                 del hdf5_file['connection table']
@@ -377,18 +364,9 @@ class FrontPanelSettings(object):
 
         # Save BLACS Main GUI Info
         dataset = data_group.create_dataset("_notebook_data",data=tab_data)
-        dataset.attrs["window_width"] = window_data["_main_window"]["width"]
-        dataset.attrs["window_height"] = window_data["_main_window"]["height"]
-        dataset.attrs["window_xpos"] = window_data["_main_window"]["xpos"]
-        dataset.attrs["window_ypos"] = window_data["_main_window"]["ypos"]
-        dataset.attrs["window_maximized"] = window_data["_main_window"]["maximized"]
-        dataset.attrs["window_frame_height"] = window_data["_main_window"]["frame_height"]
-        dataset.attrs["window_frame_width"] = window_data["_main_window"]["frame_width"]
         dataset.attrs['plugin_data'] = repr(plugin_data)
-        if save_shot_execution_data:
-            dataset.attrs['shot_execution_data'] = repr(
-                window_data["_main_window"]["_shot_execution"]
-            )
-        for pane_name,pane_position in window_data.items():
-            if pane_name != "_main_window":
-                dataset.attrs[pane_name] = pane_position
+        # A shot file records the front panel's values, not where BLACS's
+        # window was or what its shot execution was set to.
+        if not shot_file:
+            dataset.attrs['window_geometry'] = repr(window_data['geometry'])
+            dataset.attrs['shot_execution_data'] = repr(window_data['_shot_execution'])

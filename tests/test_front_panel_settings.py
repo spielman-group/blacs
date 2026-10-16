@@ -34,18 +34,7 @@ def a_front_panel():
     notebook_data = {
         'fake_device': {'notebook': '1', 'page': 0, 'visible': True},
     }
-    window_data = {
-        '_main_window': {
-            'width': 800,
-            'height': 600,
-            'xpos': 0,
-            'ypos': 0,
-            'maximized': False,
-            'frame_height': 20,
-            'frame_width': 2,
-            '_shot_execution': {},
-        },
-    }
+    window_data = {'geometry': {}, '_shot_execution': {}}
     return tab_data, notebook_data, window_data
 
 

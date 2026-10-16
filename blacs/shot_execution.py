@@ -1031,7 +1031,7 @@ class ShotExecutor(object):
                         window_data,
                         plugin_data,
                         save_conn_table=False,
-                        save_shot_execution_data=False,
+                        shot_file=True,
                     )
 
                     data_group = hdf5_file['/'].require_group('data')
