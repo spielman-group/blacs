@@ -51,47 +51,26 @@ from runmanager.client import (
     RunmanagerClient,
 )
 
-# How long to wait for runmanager to answer "are you there". This gates every
-# exchange, so it is not a background poll: the shot loop reaches it once per
-# shot, which means an unreachable runmanager costs this much between every
-# locally-run override shot, not merely between status updates.
-#
-# The two ways of getting it wrong are not symmetric. Too short and a
-# runmanager that is merely remote is judged absent, so BLACS silently stops
-# taking queued work while the apparatus quietly runs its own shots -- wrong,
-# and easy to miss, because the runmanager light polls on its own and can
-# still show runmanager answering. Too
-# long and an absent runmanager adds this to every shot cycle as dead time, on
-# an apparatus that is otherwise running perfectly well -- visible, and costing
-# time rather than data. So err long. A trivial round trip is well under a
-# millisecond on a LAN and a few hundred at worst across a campus VPN, which
-# leaves five seconds a wide margin; a site running short override shots
-# through an outage can lower it.
-#
-# Deliberately not derived from communication_timeout. That one allows
-# runmanager to choose and prepare a shot, which is work; this one measures a
-# network round trip. Tying them would make raising the allowance for a slow
-# compile silently slow down noticing that runmanager has gone.
+# Reply deadline for "are you there", paid once per shot while runmanager is
+# absent. Too short and a merely remote runmanager is judged absent; too long
+# adds dead time to every shot, so err long. Not tied to communication_timeout.
 LIVENESS_TIMEOUT = 5
 
-# What the runmanager light says BLACS is doing with runmanager. Requesting and
-# getting nothing is not idleness -- BLACS is asking over and over -- and saying
-# so is the clearest sign an operator has that the Request shots button is in:
+# What the runmanager light says. Requesting with nothing offered is not
+# idleness; the light is how an operator sees the Request shots button is in.
 REQUESTING = 'Requesting shots'
 NOT_REQUESTING = 'Not requesting shots'
 
-# What BLACS is doing, as one value: the text on the status labels, the shot
-# being run, and its id when runmanager's queue is where the shot came from.
-# One value because it is written on the GUI thread and read on the server
-# thread without a lock -- see set_status().
+# One value, so the GUI thread can write it and the server thread read it
+# without a lock; see set_status().
 PublishedStatus = namedtuple('PublishedStatus', ['text', 'shot_filepath', 'shot_id'])
 
 
-class ShotExecutor(object):
+class ShotExecutor:
 
-    # How long one last exchange may take to hand over an outcome held when
-    # the shot loop ends. Bounded, because it runs on the way out: a runmanager
-    # that is not answering must not be able to hold the quit open.
+    # Deadline for the last exchange, which hands over an outcome held as the
+    # shot loop ends. Bounded, so a runmanager that is not answering cannot hold
+    # the quit open.
     OUTCOME_FLUSH_TIMEOUT = 2
 
     def __init__(self, BLACS, ui):
@@ -105,23 +84,20 @@ class ShotExecutor(object):
         self.master_pseudoclock = self.BLACS.connection_table.master_pseudoclock
         self._runmanager_request_client = None
         self._runmanager_request_error_logged = False
-        # Why requests were stopped here, at the apparatus: an abort, a shot we
-        # could not run, a device that needs attention. Read from outside this
-        # class so that it can be shown to a runmanager user who is not
-        # standing at BLACS.
+        # Why requests were stopped, read from outside this class so a runmanager
+        # user who is not at BLACS can be shown it.
         self.local_error = None
-        # How the shot we are running turned out, until the next exchange
-        # carries it to runmanager, and the id of the shot we are running:
+        # The outcome of the shot just run, held until an exchange carries it to
+        # runmanager, and the id of the running shot.
         self._pending_outcome = None
         self._current_shot_id = None
-        # What the status labels say, kept where a status query can read it
-        # without the GUI thread. Written only by set_status():
+        # What the labels say, readable without the GUI thread. Written only by
+        # set_status().
         self.published_status = PublishedStatus('', None, None)
         self._next_rep_index = {}
 
         self._logger = logging.getLogger('BLACS.ShotExecutor')
 
-        # set up buttons
         self._ui.shot_request_button.toggled.connect(self._toggle_request_shots)
         self._ui.local_override_browse_button.clicked.connect(
             self.browse_local_override
@@ -130,7 +106,6 @@ class ShotExecutor(object):
             self._ui.local_override_lineEdit.setToolTip
         )
 
-        # Set the elision of the status labels:
         elide_label(self._ui.shot_status, self._ui.shot_status_verticalLayout, Qt.ElideRight)
         elide_label(self._ui.running_shot_name, self._ui.shot_status_verticalLayout, Qt.ElideLeft)
         # The light polls on its own: with requests off the shot loop never
@@ -148,10 +123,8 @@ class ShotExecutor(object):
         self.manager.start()
 
     def get_save_data(self):
-        # Whether BLACS is requesting shots is deliberately absent: it is a
-        # runtime gate on hardware execution, so enabling it is always a
-        # deliberate act at this BLACS rather than something a saved state can
-        # do on startup.
+        # Whether shots are requested is left out on purpose: enabling hardware
+        # execution is a deliberate act at this BLACS, not a saved state.
         return {'last_opened_shots_folder': self.last_opened_shots_folder,
                 'local_override_path': str(self._ui.local_override_lineEdit.text()).strip(),
                }
@@ -186,11 +159,9 @@ class ShotExecutor(object):
     def requesting_shots(self,value):
         value = bool(value)
         if value:
-            # Asking for shots again is how an operator acknowledges whatever
-            # stopped them: one action clears the error and tries again. It
-            # deliberately re-checks nothing first -- the per-device check made
-            # when the shot is programmed is still the final authority, and
-            # will stop requests again if the problem is still there.
+            # Asking for shots again acknowledges whatever stopped them. Nothing is
+            # re-checked first: the per-device check made when the shot is
+            # programmed stays the final authority.
             self.local_error = None
         self._requesting_shots = value
         if value != self._ui.shot_request_button.isChecked():
@@ -200,15 +171,11 @@ class ShotExecutor(object):
     def stop_requesting_shots(self, reason):
         """Stop asking for shots because something here needs attention.
 
-        Every shot that does not complete comes through here, so that BLACS
-        never starts another one before an operator has seen why the last one
-        did not run, and so that the reason survives to be shown -- here, and
-        to a runmanager user who cannot see this window.
-
-        Called from the shot loop, but run on the GUI thread, so that recording
-        the reason and stopping requests happen together: an operator asking
-        for shots again in between would otherwise clear a reason that is set
-        moments later, leaving requests stopped and nothing saying why."""
+        Every shot that does not complete comes through here, so the reason is
+        kept and shown here and to a runmanager user who cannot see this window.
+        It is called from the shot loop but runs on the GUI thread, so recording
+        the reason and stopping requests are one step: an operator asking for
+        shots in between would otherwise clear the reason."""
         self.local_error = str(reason)
         self.requesting_shots = False
 
@@ -243,10 +210,9 @@ class ShotExecutor(object):
     def report_shot_outcome(self, path, status, message=''):
         """Hold how a shot turned out, to be reported on the next exchange.
 
-        There is no separate channel for outcomes: an outcome rides on the next
-        exchange, so runmanager applies it to the row it offered before
-        deciding what to offer next. Only a shot runmanager gave us has an
-        outcome it can record; a local override shot is not in its queue."""
+        Runmanager applies the outcome to the row it offered before choosing
+        what to offer next. Only a shot runmanager gave us has an outcome it can
+        record, so for a local override shot this does nothing."""
         if self._current_shot_id is None:
             return
         outcome = {
@@ -255,8 +221,8 @@ class ShotExecutor(object):
             'message': message,
         }
         if path is not None:
-            # The file we ran, which is not the file we were offered when we
-            # made a fresh copy to re-run a shot that already held data:
+            # The file run, which differs from the one offered when a fresh copy was
+            # made to re-run a shot that already held data.
             outcome['path'] = path_to_agnostic(path)
         self._pending_outcome = outcome
         self._current_shot_id = None
@@ -269,15 +235,11 @@ class ShotExecutor(object):
     def final_report_pending(self):
         """Whether the loop still owes runmanager a word about a shot.
 
-        Read from the GUI thread as BLACS quits, because the report is made on
-        the way out of the loop's own thread and that thread is a daemon: what
-        this answers is whether ending the process now would take the report
-        with it. False once the outcome has been taken -- and false once the
-        loop has ended, which is after it has named a run it could not deliver.
-
-        True is not a reason to wait indefinitely: the loop can be a whole
-        communication timeout from noticing it was stopped, so whoever asks
-        bounds the wait."""
+        Read from the GUI thread as BLACS quits: True means ending the process
+        now would take the report with it, as the loop's thread is a daemon.
+        False once the outcome has been taken or the loop has ended. The loop
+        can be a whole communication timeout from noticing a stop, so the
+        caller bounds its wait."""
         return self._pending_outcome is not None and self.manager.is_alive()
 
     def name_held_outcome(self):
@@ -298,16 +260,14 @@ class ShotExecutor(object):
     def exchange_with_runmanager(self, request_shot, timeout=None):
         """Report the finished shot's outcome, and ask for the next shot.
 
-        One message does both, so that runmanager retires the row it offered
-        before choosing what to offer next. The outcome is only let go of once
-        runmanager has taken it; otherwise it rides on the next exchange rather
-        than being lost to a momentary outage.
+        One message does both, so runmanager retires the row it offered before
+        choosing what to offer next. The outcome is let go only once runmanager
+        has taken it; otherwise it rides on the next exchange.
 
-        Returns ``(response, reached)``: what runmanager said -- its provider
-        ``state``, and the ``shot_id`` and ``path`` of the shot when it offered
-        one -- and whether we reached it at all. A runmanager we could not
-        reach has offered nothing and is reported as such rather than as
-        paused: only runmanager saying it is paused makes it paused."""
+        Returns ``(response, reached)``: runmanager's reply (its provider
+        ``state``, and the ``shot_id`` and ``path`` of any shot offered) and
+        whether it was reached. An unreachable runmanager has offered nothing
+        and is not reported as paused."""
         no_shot = {'state': PROVIDER_NONE, 'shot_id': None, 'path': None}
         # A deadline other than the client's own needs a client built with it.
         client = None if timeout is None else RunmanagerClient(timeout=timeout)
@@ -326,10 +286,9 @@ class ShotExecutor(object):
     def runmanager_alive(self, timeout=None):
         """Ask runmanager whether it is there, and say whether it answered.
 
-        This gates the exchange: a runmanager that does not answer is not asked
-        for a shot, so BLACS falls through to its local override rather than
-        waiting out the much longer allowance an exchange is given. That is the
-        whole point of asking separately, and why this has its own timeout."""
+        Gates the exchange: a runmanager that does not answer is not asked for a
+        shot, so BLACS falls through to its local override instead of waiting
+        out an exchange's longer allowance. Hence its own timeout."""
         alive, _ = self.runmanager_rpc(
             RunmanagerClient.say_hello,
             'Runmanager unavailable while checking status: %s',
@@ -342,14 +301,12 @@ class ShotExecutor(object):
         return alive
 
     def process_request(self,h5_filepath):
-        # check connection table
         try:
             new_conn = ConnectionTable(h5_filepath, logging_prefix='BLACS')
         except Exception:
             return None, "H5 file not accessible to Control PC\n"
         result,error = inmain(self.BLACS.connection_table.compare_to,new_conn)
         if result:
-            # Has this run file been run already?
             with h5py.File(h5_filepath, 'r') as h5_file:
                 if 'data' in h5_file['/']:
                     rerun = True
@@ -372,7 +329,7 @@ class ShotExecutor(object):
                        "    Submitted an old file, and the experiment has since been rewired\n"
                        "\n"
                        "Please verify your experiment script matches the current experiment configuration, and try again\n"
-                       "The error was %s\n"%error)
+                       f"The error was {error}\n")
             return None, message
             
     def new_rep_name(self, h5_filepath):
@@ -386,21 +343,8 @@ class ShotExecutor(object):
         return next_path, index
         
     def clean_h5_file(self, h5file, new_h5_file, repeat_number=0):
-        """Write a copy of a shot file with no data from a run in it.
-
-        The copy is the same shot, ready to be run: the groups describing the
-        experiment are copied across, the data a run wrote is not, and every
-        root attribute crosses over untouched -- the earlier run's ``run time``
-        among them, until this run writes its own.
-
-        ``run repeat`` is the one BLACS writes, and the only root attribute it
-        has any opinion about: it numbers which execution of the shot this file
-        holds. The rest are carried rather than interpreted -- BLACS does not
-        know what they name, and could mint no replacement for one it left out,
-        so a copy missing one would describe the shot less fully than the file
-        that was submitted. An attribute naming a shot is therefore on every
-        file BLACS writes for that shot, and the repeat number is the field
-        that tells those files apart."""
+        """Copy a shot file without run data, keeping root attributes and setting
+        ``run repeat``."""
         try:
             with h5py.File(h5file, 'r') as old_file:
                 with h5py.File(new_h5_file, 'w') as new_file:
@@ -422,25 +366,14 @@ class ShotExecutor(object):
                         new_file.attrs[name] = old_file.attrs[name]
                     new_file.attrs['run repeat'] = repeat_number
         except Exception:
-            # raise
             self._logger.exception('Clean H5 File Error.')
             return False
             
         return True
 
     def reset_failed_shot_file(self, path):
-        """Return a failed shot's file to the state it was in before the run.
-
-        A shot that did not complete must not keep the partial data of the run
-        that failed, or it cannot be run again. Errors are logged and swallowed:
-        every caller is already handling a failure, and the shot file may be
-        unreadable precisely because of it. Letting that raise would take the
-        shot executor's thread down with it and stop BLACS running any further
-        shot, silently.
-
-        The file is rewritten in place and keeps the repeat number it already
-        had: a run that failed is not another execution of the shot, it is the
-        same one about to be attempted again."""
+        """Rewrite a failed shot's file without the run's data, keeping its repeat
+        number. Errors are logged, not raised, so they cannot end the shot loop."""
         try:
             with h5py.File(path, 'r') as h5_file:
                 repeat_number = h5_file.attrs.get('run repeat', 0)
@@ -470,25 +403,9 @@ class ShotExecutor(object):
 
     @inmain_decorator(wait_for_return=True)
     def set_status(self, status_text, shot_filepath=None):
-        # What the labels say is published as a plain attribute as well,
-        # because a runmanager asking what this BLACS is doing is answered on
-        # the server thread, and must be answered while a shot is running and
-        # the GUI thread is busy with it. This is the only place it is written,
-        # so the labels and what is published cannot drift apart.
-        #
-        # All of it goes out as one immutable value, assigned in one statement,
-        # and the snapshot takes that value once. A reader takes no lock, and a
-        # single assignment is atomic with respect to other threads, so what it
-        # reads is one whole status: the one before this call or the one after,
-        # never fields of both.
-        #
-        # The id is taken here rather than read from _current_shot_id when the
-        # snapshot is made: that is cleared when the outcome is recorded, while
-        # the path lives until the next status is set, and everything between
-        # -- every shot_complete callback, for as long as a plugin takes -- was
-        # a window in which the snapshot showed a path with no id. Runmanager
-        # reads that as the one thing it cannot be, a shot from no queue, and
-        # told the operator their queued shot was BLACS's own.
+        # Published as one immutable value, so a status query on the server
+        # thread answers lock-free while the GUI thread runs a shot. The id is
+        # taken here: _current_shot_id clears at the outcome, the path does not.
         status_text = str(status_text)
         self.published_status = PublishedStatus(
             text=status_text,
@@ -497,24 +414,19 @@ class ShotExecutor(object):
         )
         self._ui.shot_status.setText(status_text)
         if shot_filepath is not None:
-            self._ui.running_shot_name.setText('<b>%s</b>'% str(os.path.basename(shot_filepath)))
+            self._ui.running_shot_name.setText(f'<b>{os.path.basename(shot_filepath)}</b>')
         else:
             self._ui.running_shot_name.setText('')
 
     def get_status_snapshot(self):
         """Report what this BLACS is doing, for a runmanager user to read.
 
-        Read-only, and read without the GUI thread: every field is read from a
-        plain attribute, so a busy BLACS still answers. Nothing here may change
-        anything -- the gate on hardware execution, the error that closed it,
-        and Abort all stay with the operator standing at this apparatus.
-
-        What the labels say and which shot they are about are taken together,
-        in one read of the one value set_status publishes, so that a status
-        being set while this runs cannot leave the answer describing two.
-
-        The shot's path goes out shared-drive-agnostic, as an outcome does, so
-        that a runmanager on another machine can read it."""
+        Read-only and read without the GUI thread, so a busy BLACS still
+        answers. It changes nothing: the gate on hardware execution, the error
+        that closed it, and Abort stay with the operator at this apparatus. The
+        status text and shot come from one read of the value ``set_status``
+        publishes, so they cannot describe two statuses. The shot's path is
+        shared-drive agnostic, as an outcome's is."""
         status = self.published_status
         shot_path = status.shot_filepath
         return {
@@ -552,66 +464,44 @@ class ShotExecutor(object):
        
      
     def manage(self):
-        """Run the shot loop, and make sure it cannot end invisibly.
-
-        This loop is the only thing that runs shots. If its thread ends, BLACS
-        stays up and responsive, keeps reporting whatever status it last set,
-        and never runs another shot -- and no frame above this one would say
-        so. Anything the loop does not handle stops here, visibly."""
+        """Run the shot loop. An error it does not handle is raised visibly, rather
+        than ending the thread silently."""
         try:
             self._manage()
         except Exception:
             self._logger.exception('Shot execution stopped on an unhandled error.')
-            # Raise in a thread for visibility, as the loop does for a failed shot:
+            # Raise in a thread for visibility, as for a failed shot.
             zprocess.raise_exception_in_thread(sys.exc_info())
             self.stop_requesting_shots(
                 'Shot execution stopped on an unhandled error; restart BLACS')
             self.set_status("Shot execution stopped\nSee the log; restart BLACS")
         finally:
+            # In a finally so an unhandled error cannot strand a held outcome.
             self._deliver_or_name_held_outcome()
 
     def _deliver_or_name_held_outcome(self):
-        """Hand over an outcome held when the loop ends, or name the run lost.
-
-        BLACS keeps an outcome until runmanager takes it, so the loop ending
-        with one in hand is the one way it can be dropped. One last exchange
-        delivers it, asking for nothing and bounded by OUTCOME_FLUSH_TIMEOUT,
-        because this runs on the way out.
-
-        If it still cannot be delivered the shot is not lost: the row is in
-        runmanager's queue marked running, and the next BLACS to ask is offered
-        it again under the same id, a request carrying no outcome for it being
-        proof that nobody is running it. What is lost is this run, which
-        reaches neither runmanager nor lyse and will be run again -- so say
-        which shot, and how it went.
-
-        Called from the finally above rather than the tail of the loop. At the
-        tail it was skipped by exactly the path that strands an outcome most
-        reliably: an error the loop could not handle, which is caught here."""
+        """Hand over an outcome still held as the loop ends, or log the run lost."""
         if self._pending_outcome is None:
             return
         try:
             self.exchange_with_runmanager(False, timeout=self.OUTCOME_FLUSH_TIMEOUT)
         except Exception:
             self._logger.exception('Could not hand over a held shot outcome.')
+        # If undelivered, the row stays marked running in runmanager's queue and
+        # is offered again; only this run is lost, so name it.
         self.name_held_outcome()
 
     def _manage(self):
         logger = logging.getLogger('BLACS.shot_executor.thread')
         process_tree.zlock_client.set_thread_name('shot_executor')
-        # While the program is running!
         logger.info('starting')
         
-        # HDF5 prints lots of errors by default, for things that aren't
-        # actually errors. These are silenced on a per thread basis,
-        # and automatically silenced in the main thread when h5py is
-        # imported. So we'll silence them in this thread too:
+        # HDF5 prints errors that are not errors; h5py silences them in the main
+        # thread on import, so silence them in this thread too.
         h5py._errors.silence_errors()
         
-        # This stores the notification queue currently being used to
-        # communicate with tabs, so that abort signals can be put
-        # to it when those tabs never respond and are restarted by
-        # the user.
+        # The queue tabs report to, so abort signals can be put to it when tabs
+        # never respond and are restarted by the user.
         self.notify_queue = queue.Queue()
 
         timeout_limit = 300 #seconds
@@ -619,15 +509,12 @@ class ShotExecutor(object):
         
         while self.manager_running:
             path = None
-            # Unchecking Request shots stops the next request, not the shot in
-            # hand: a whole shot happens within one pass of this loop, so it
-            # finishes before this is read again. An outcome still waiting to
-            # be reported is not held back by it either, so runmanager always
-            # learns how the shot it offered turned out.
+            # Unchecking Request shots stops the next request, not the shot in hand,
+            # nor the report of an outcome still held, so runmanager always learns
+            # how the shot it offered turned out.
             if not self.requesting_shots and self._pending_outcome is None:
                 self._runmanager_link.show_state(NOT_REQUESTING)
-                # A standing local error is left on the status line, for the
-                # reason given where the other branches set their status.
+                # Leave a standing local error on the status line.
                 if not self.local_error:
                     self.set_status('Idle')
                 time.sleep(1)
@@ -642,29 +529,14 @@ class ShotExecutor(object):
             # shots during it stops the request that follows.
             request_shot = self.requesting_shots
             if runmanager_answered:
-                # One exchange reports how the last shot turned out and
-                # asks for the next one. There is nothing to acknowledge:
-                # the row stays in runmanager's queue while we run it, so a
-                # reply that never arrives costs a poll rather than a shot.
-                #
-                # This is the only place a shot is ever asked for, and it
-                # is reached only between shots, with the outcome of the
-                # last one in hand. Runmanager's reclaim rests on that: a
-                # request that carries no outcome retiring a row it still
-                # has marked running proves this BLACS is not running it,
-                # so it hands the row out again rather than leaving the
-                # queue stopped behind a reply that went missing. Asking
-                # for work from anywhere else, or while a shot is under
-                # way, breaks that inference and would have one shot handed
-                # out twice.
+                # The only request for a shot, made between shots with the last
+                # outcome in hand. Runmanager's reclaim relies on it: asking from
+                # anywhere else, or during a shot, would hand one shot out twice.
                 response, _ = self.exchange_with_runmanager(request_shot)
                 shot_id = response['shot_id']
                 agnostic_path = response['path']
-                # A paused runmanager is one whose user has stopped it
-                # offering work, which is nothing to do with whether this
-                # apparatus should be running: we fall through to the local
-                # override shot exactly as for a runmanager with an empty
-                # queue, and say which it was so an operator can see why no
+                # A paused runmanager falls through to the local override shot, as an
+                # empty queue does; it is told apart so the light can say why no
                 # queued work is arriving.
                 runmanager_paused = response['state'] == PROVIDER_PAUSED
                 # Pending is the shot runmanager will offer next, still
@@ -682,9 +554,9 @@ class ShotExecutor(object):
                     )
 
             if not agnostic_path:
-                # A standing local error stays on the status line: this pass
-                # -- the one that delivers that shot's outcome -- would
-                # otherwise wipe it before an operator could read it.
+                # Leave a standing local error on the status line: this pass,
+                # which delivers that shot's outcome, would otherwise wipe it
+                # before an operator could read it.
                 if not self.local_error:
                     self.set_status('Idle')
                 if not request_shot:
@@ -700,21 +572,14 @@ class ShotExecutor(object):
             if path is None:
                 logger.error(message.strip())
                 if shot_id is not None:
-                    # A shot we cannot read is reported as rejected on the
-                    # next exchange, and that is the whole of our part in
-                    # it. Requests are deliberately left on: the shot is
-                    # unusable, not the apparatus, and stopping here would
-                    # need someone standing at this machine to start it
-                    # again over a file that is runmanager's to fix.
-                    # Runmanager holds the row and stops offering it, so
-                    # the next exchange brings nothing and we run our own
-                    # shot until it is dealt with there.
+                    # Reported as rejected on the next exchange. Requests stay on:
+                    # the shot is unusable, not the apparatus, and runmanager stops
+                    # offering the row, so we run our own shot meanwhile.
                     self.report_shot_outcome(None, 'rejected', message.strip())
                     self.set_status("Rejected shot from runmanager")
                 else:
-                    # The local override shot is this machine's own, chosen
-                    # here, and there is no runmanager row to hold it. Stop,
-                    # or retry a shot that cannot be read once a second.
+                    # A local override shot has no runmanager row to hold it, so stop
+                    # rather than retry an unreadable file every second.
                     self.set_status("Rejected local override shot\nRequests stopped")
                     self.stop_requesting_shots(message.strip())
                 time.sleep(1)
@@ -727,11 +592,10 @@ class ShotExecutor(object):
             transition_list = {}   
             self.notify_queue = queue.Queue()
 
-            # Function to be run when abort button is clicked
             def abort_function():
                 try:
-                    # Set device name to "Shot Executor" which will never be a labscript device name
-                    # as it is not a valid python variable name (has a space in it!)
+                    # "Shot Executor" is never a device name: it has a space, so is not
+                    # a valid Python name.
                     self.notify_queue.put(['Shot Executor', 'abort'])
                 except Exception:
                     logger.exception('Could not send abort message to the shot executor')
@@ -742,12 +606,8 @@ class ShotExecutor(object):
                 except Exception:
                     logger.exception('Could not send restart message to the shot executor for device %s'%device_name)
         
-            ##########################################################################################################################################
-            #                                                       transition to buffered                                                           #
-            ########################################################################################################################################## 
+            # Transition to buffered.
             try:  
-                # A notification queue for when the tabs have
-                # completed transitioning to buffered:        
                 
                 timed_out = False
                 error_condition = False
@@ -755,13 +615,9 @@ class ShotExecutor(object):
                 restarted = False
                 self.set_status("Transitioning to buffered...", path)
                 
-                # Enable the abort button, and link in notify_queue:
                 inmain(self._ui.shot_abort_button.clicked.connect,abort_function)
                 inmain(self._ui.shot_abort_button.setEnabled,True)
                                 
-                ##########################################################################################################################################
-                #                                                        Plugin callbacks                                                                #
-                ########################################################################################################################################## 
                 plugins.manager.fire_event('pre_transition_to_buffered', path)
 
                 start_time = time.time()
@@ -778,7 +634,6 @@ class ShotExecutor(object):
                         start_order[name] = device_properties.get('start_order', None)
                         stop_order[name] = device_properties.get('stop_order', None)
 
-                # Sort the devices into groups based on their start_order and stop_order
                 start_groups = defaultdict(set)
                 stop_groups = defaultdict(set)
                 for name in devices_in_use:
@@ -790,7 +645,6 @@ class ShotExecutor(object):
                         # Ready to transition the next group:
                         for name in start_groups.pop(min(start_groups)):
                             try:
-                                # Connect restart signal from tabs to notify_queue and transition the device to buffered mode
                                 success = self.transition_device_to_buffered(name,transition_list,path,restart_function)
                                 if not success:
                                     logger.error('%s has an error condition, aborting run' % name)
@@ -804,13 +658,10 @@ class ShotExecutor(object):
                             break
                         
                     try:
-                        # Wait for a device to transtition_to_buffered:
                         logger.debug('Waiting for the following devices to finish transitioning to buffered mode: %s'%str(transition_list))
                         device_name, result = self.notify_queue.get(timeout=2)
                         
-                        #Handle abort button signal
                         if device_name == 'Shot Executor' and result == 'abort':
-                            # we should abort the run
                             logger.info('abort signal received from GUI')
                             abort = True
                             break
@@ -844,18 +695,15 @@ class ShotExecutor(object):
                         if error_condition:
                             break
                             
-                        # Has programming timed out?
                         if time.time() - start_time > timeout_limit:
                             logger.error('Transitioning to buffered mode timed out')
                             timed_out = True
                             break
 
-                # Handle if we broke out of loop due to timeout or error:
                 if timed_out or error_condition or abort or restarted:
-                    # Stop requesting shots and set a status message. Any shot
-                    # that did not complete stops requests, including an abort,
-                    # so that runmanager decides what becomes of the shot, and
-                    # an operator has seen why, before we ask for another one.
+                    # Any shot that did not complete stops requests, an abort included, so
+                    # runmanager decides its fate and an operator sees why before
+                    # another is asked for.
                     outcome_path = path
                     if timed_out:
                         status_text = "Programming timed out\nRequests stopped"
@@ -875,47 +723,29 @@ class ShotExecutor(object):
                     self.stop_requesting_shots(reason)
                     self.report_shot_outcome(outcome_path, outcome_status, reason)
 
-                    # Abort the run for all devices in use:
-                    # Recreate the notification queue here because we don't want
-                    # to hear from devices that are still transitioning to
-                    # buffered mode.
+                    # Recreate the queue: we do not want to hear from devices
+                    # that are still transitioning to buffered mode.
                     self.notify_queue = queue.Queue()
                     for tab in devices_in_use.values():                        
-                        # We call abort buffered here, because if each tab is either in mode=BUFFERED or transition_to_buffered failed in which case
-                        # it should have called abort_transition_to_buffered itself and returned to manual mode
-                        # Since abort buffered will only run in mode=BUFFERED, and the state is not queued indefinitely (aka it is deleted if we are not in mode=BUFFERED)
-                        # this is the correct method call to make for either case
+                        # abort_buffered acts only in mode BUFFERED, so it suits both a
+                        # buffered tab and one that already returned to manual mode.
+                        # Its result needs no check: it succeeds or raises in the tab.
                         tab.abort_buffered(self.notify_queue)
-                        # We don't need to check the results of this function call because it will either be successful, or raise a visible error in the tab.
-                        
-                        # disconnect restart signal from tabs
                         inmain(tab.disconnect_restart_receiver,restart_function)
                         
-                    # disconnect abort button and disable
                     inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                     inmain(self._ui.shot_abort_button.setEnabled,False)
                     
-                    # Start a new iteration
                     continue
-                
-            
-            
-                ##########################################################################################################################################
-                #                                                             SCIENCE!                                                                   #
-                ##########################################################################################################################################
-            
-                # Get front panel data, but don't save it to the h5 file until the experiment ends:
+
+                # Front panel data is read now but saved to the h5 file after the run.
                 states,tab_positions,window_data,plugin_data = self.BLACS.front_panel_settings.get_save_data()
-                self.set_status("Running (program time: %.3fs)..."%(time.time() - start_time), path)
+                self.set_status(f"Running (program time: {time.time() - start_time:.3f}s)...", path)
                     
-                # A notification queue for when the experiment has finished.
                 experiment_finished_notifications = queue.Queue()
                 logger.debug('About to start the master pseudoclock')
                 run_time = datetime.datetime.now()
 
-                ##########################################################################################################################################
-                #                                                        Plugin callbacks                                                                #
-                ########################################################################################################################################## 
                 plugins.manager.fire_event('science_starting', path)
 
                 self.BLACS.tablist[self.master_pseudoclock].start_run(
@@ -923,7 +753,6 @@ class ShotExecutor(object):
                 )
                 
                                                 
-                # Wait for notification of the end of run:
                 abort = False
                 restarted = False
                 done = False
@@ -942,7 +771,6 @@ class ShotExecutor(object):
                             abort = True
                         if result == 'restart':
                             restarted = True
-                        # Check for error states in tabs
                         for device_name, tab in devices_in_use.items():
                             if self.get_device_error_state(device_name,devices_in_use):
                                 restarted = True
@@ -953,10 +781,8 @@ class ShotExecutor(object):
                     for devicename, tab in devices_in_use.items():
                         if tab.mode == MODE_BUFFERED:
                             tab.abort_buffered(self.notify_queue)
-                        # disconnect restart signal from tabs 
                         inmain(tab.disconnect_restart_receiver,restart_function)
                                             
-                # Disable abort button
                 inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                 inmain(self._ui.shot_abort_button.setEnabled,False)
                 
@@ -973,18 +799,14 @@ class ShotExecutor(object):
                     self.report_shot_outcome(path, 'aborted', 'Aborted')
                     
                 if abort or restarted:
-                    # after disabling the abort button, we now start a new iteration
                     continue                
                 
                 logger.info('Run complete')
                 self.set_status("Saving data...", path)
-            # End try/except block here
             except Exception:
                 logger.exception("Error in shot execution. Requests stopped.")
 
-                # Raise the error in a thread for visibility
                 zprocess.raise_exception_in_thread(sys.exc_info())
-                # clean up the h5 file
                 self.stop_requesting_shots('Error in shot execution')
                 self.reset_failed_shot_file(path)
                 
@@ -994,27 +816,15 @@ class ShotExecutor(object):
                 self.report_shot_outcome(
                     path, 'failed', 'Error in shot execution')
 
-                # disconnect and disable abort button
                 inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                 inmain(self._ui.shot_abort_button.setEnabled,False)
                 
-                # Start a new iteration
                 continue
                              
-            ##########################################################################################################################################
-            #                                                           SCIENCE OVER!                                                                #
-            ##########################################################################################################################################
             finally:
-                ##########################################################################################################################################
-                #                                                        Plugin callbacks                                                                #
-                ########################################################################################################################################## 
                 plugins.manager.fire_event('science_over', path)
 
-            
-            ##########################################################################################################################################
-            #                                                       Transition to manual                                                             #
-            ##########################################################################################################################################
-            # start new try/except block here                   
+            # Transition to manual.
             try:
                 with h5py.File(path,'r+') as hdf5_file:
                     self.BLACS.front_panel_settings.store_front_panel_in_h5(
@@ -1028,17 +838,13 @@ class ShotExecutor(object):
                     )
 
                     data_group = hdf5_file['/'].require_group('data')
-                    # stamp with the run time of the experiment
                     hdf5_file.attrs['run time'] = run_time.strftime('%Y%m%dT%H%M%S.%f')
         
                 error_condition = False
                 response_list = {}
-                # Keep transitioning tabs to manual mode and waiting on them until they
-                # are all done or have all errored/restarted/failed. If one fails, we
-                # still have to transition the rest to manual mode:
+                # If one device fails we still transition the rest to manual mode.
                 while stop_groups:
                     transition_list = {}
-                    # Transition the next group to manual mode:
                     for name in stop_groups.pop(min(stop_groups)):
                         tab = devices_in_use[name]
                         try:
@@ -1047,15 +853,13 @@ class ShotExecutor(object):
                         except Exception:
                             logger.exception('Exception while transitioning %s to manual mode.'%(name))
                             error_condition = True
-                    # Wait for their responses:
                     while transition_list:
                         logger.info('Waiting for the following devices to finish transitioning to manual mode: %s'%str(transition_list))
                         try:
                             name, result = self.notify_queue.get(2)
                             if name == 'Shot Executor' and result == 'abort':
-                                # Ignore any abort signals left in the
-                                # notification queue, it is too
-                                # late to abort in any case:
+                                # Ignore abort signals left in the queue:
+                                # it is too late to abort.
                                 continue
                         except queue.Empty:
                             # 2 seconds without a device transitioning to manual mode.
@@ -1078,8 +882,6 @@ class ShotExecutor(object):
                             logger.debug('%s is in an error state' % name)
                         else:
                             logger.debug('%s finished transitioning to manual mode' % name)
-                        # Once device has transitioned_to_manual, disconnect restart
-                        # signal:
                         tab = devices_in_use[name]
                         inmain(tab.disconnect_restart_receiver, restart_function)
                         del transition_list[name]
@@ -1090,37 +892,28 @@ class ShotExecutor(object):
 
             except Exception:
                 error_condition = True
-                # Saving the data or putting the devices back failed, which is
-                # not the same as a device reporting an error, and is what an
-                # operator is told and what runmanager shows on the row:
+                # Saving the data or putting the devices back failed, which is not a
+                # device-reported error: this is what the operator is told and what
+                # runmanager shows on the row.
                 reason = 'Error saving data after the run'
                 logger.exception("Error in shot execution. Requests stopped.")
                 self.set_status("Error in shot execution\nRequests stopped")
                 self._abort_buffered_devices(devices_in_use, restart_function)
 
-                # Raise the error in a thread for visibility
                 zprocess.raise_exception_in_thread(sys.exc_info())
 
             if error_condition:
-                # clean up the h5 file
                 self.stop_requesting_shots(reason)
                 self.reset_failed_shot_file(path)
 
                 self.report_shot_outcome(path, 'failed', reason)
                 continue
             
-            ##########################################################################################################################################
-            #                                                        Completion Notification                                                        #
-            ########################################################################################################################################## 
             logger.info('All devices are back in static mode.')  
 
             self.report_shot_outcome(path, 'completed')
 
-            ##########################################################################################################################################
-            #                                                        Plugin callbacks                                                                #
-            ########################################################################################################################################## 
             plugins.manager.fire_event('shot_complete', path)
 
-            ##########################################################################################################################################
             self.set_status("Idle")
         logger.info('Stopping')
