@@ -298,11 +298,7 @@ class FrontPanelSettings(object):
                             self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table)
                         else:
                             if not silent:
-                                message = QMessageBox()
-                                message.setText("Front Panel not saved.")
-                                message.setIcon(QMessageBox.Information)
-                                message.setWindowTitle("BLACS")
-                                message.exec()
+                                self.blacs.error_dialog("Front Panel not saved.")
                             else:
                                 logger.info("Front Panel not saved as it already existed in the h5 file '"+current_file+"'")
                             return
@@ -312,11 +308,7 @@ class FrontPanelSettings(object):
             else:
                 # Create Error dialog (invalid connection table)
                 if not silent:
-                    message = QMessageBox()
-                    message.setText("The Front Panel was not saved as the file selected contains a connection table which is not a subset of the BLACS connection table.")
-                    message.setIcon(QMessageBox.Information)
-                    message.setWindowTitle("BLACS")
-                    message.exec()
+                    self.blacs.error_dialog("The Front Panel was not saved as the file selected contains a connection table which is not a subset of the BLACS connection table.")
                 else:
                     logger.info("Front Panel not saved as the connection table in the h5 file '"+current_file+"' didn't match the current connection table.")
                 return

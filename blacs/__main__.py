@@ -44,7 +44,6 @@ from qtutils.qt.QtCore import QTimer, Qt, qVersion
 from qtutils.qt.QtGui import QIcon, QColor, QPalette
 from qtutils.qt.QtWidgets import (
     QMainWindow,
-    QMessageBox,
     QApplication
 )
 from qtutils.qt import QT_ENV
@@ -97,8 +96,9 @@ from labscript_utils.connections import ConnectionTable
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
+from labscript_utils.qtwidgets.application import LabscriptGuiApplication
 # Lab config code
-from labscript_utils.labconfig import LabConfig, LabscriptApplication, get_default_appconfig_file
+from labscript_utils.labconfig import LabConfig, get_default_appconfig_file
 from labscript_utils.plugins import MenuContext
 from labscript_profile import hostname
 # Shot execution code
@@ -156,8 +156,9 @@ class BLACSWindow(ThemedWindow, QMainWindow):
         )
 
 
-class BLACS(LabscriptApplication):
+class BLACS(LabscriptGuiApplication):
 
+    app_name = APPLICATION_NAME
     tab_widget_ids = 7
 
     @staticmethod
@@ -453,16 +454,10 @@ class BLACS(LabscriptApplication):
             if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
                 try:
                     # TODO: Warn that this will restore values, but not channels that are locked
-                    message = QMessageBox()
-                    message.setText("""Warning: This will modify front panel values and cause device output values to update.
+                    if self.question_dialog("""Warning: This will modify front panel values and cause device output values to update.
                     \nShot execution state will be replaced.
                     \n
-                    \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?""")
-                    message.setIcon(QMessageBox.Warning)
-                    message.setWindowTitle("BLACS")
-                    message.setStandardButtons(QMessageBox.Yes|QMessageBox.No)
-
-                    if message.exec() == QMessageBox.Yes:
+                    \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?"""):
                         front_panel_settings = FrontPanelSettings(filepath, self.connection_table)
                         settings,question,error,tab_data = front_panel_settings.restore()
                         #TODO: handle question/error
@@ -478,17 +473,9 @@ class BLACS(LabscriptApplication):
                         )
                 except Exception as e:
                     logger.exception("Unable to load the front panel in %s."%(filepath))
-                    message = QMessageBox()
-                    message.setText("Unable to load the front panel. The error encountered is printed below.\n\n%s"%str(e))
-                    message.setIcon(QMessageBox.Information)
-                    message.setWindowTitle("BLACS")
-                    message.exec()
+                    self.error_dialog("Unable to load the front panel. The error encountered is printed below.\n\n%s"%str(e))
             else:
-                message = QMessageBox()
-                message.setText("You did not select a file ending with .h5 or .hdf5. Please try again")
-                message.setIcon(QMessageBox.Information)
-                message.setWindowTitle("BLACS")
-                message.exec()
+                self.error_dialog("You did not select a file ending with .h5 or .hdf5. Please try again")
                 QTimer.singleShot(10,self.on_load_front_panel)
 
     def on_save_exit(self):
@@ -497,9 +484,7 @@ class BLACS(LabscriptApplication):
 
         if len(self.failed_device_settings) > 0:
             message = ('Save data from broken tabs? \n Broken tabs are: \n {}'.format(list(self.failed_device_settings.keys())))
-            reply = QMessageBox.question(self.ui, 'Save broken tab data?', message,
-                                               QMessageBox.Yes | QMessageBox.No)
-            if reply == QMessageBox.Yes:
+            if self.question_dialog(message):
                 data[0].update(self.failed_device_settings)
 
         # with h5py.File(self.settings_path,'r+') as h5file:
