@@ -306,9 +306,8 @@ class ShotExecutor(object):
         Returns ``(response, reached)``: what runmanager said -- its provider
         ``state``, and the ``shot_id`` and ``path`` of the shot when it offered
         one -- and whether we reached it at all. A runmanager we could not
-        reach, or one whose reply we could not read, has offered nothing and is
-        reported as such rather than as paused: only runmanager saying it is
-        paused makes it paused."""
+        reach has offered nothing and is reported as such rather than as
+        paused: only runmanager saying it is paused makes it paused."""
         no_shot = {'state': PROVIDER_NONE, 'shot_id': None, 'path': None}
         # A deadline other than the client's own needs a client built with it.
         client = None if timeout is None else RunmanagerClient(timeout=timeout)
@@ -322,13 +321,7 @@ class ShotExecutor(object):
         if not reached:
             return no_shot, False
         self._pending_outcome = None
-        if not isinstance(response, dict):
-            return no_shot, True
-        return {
-            'state': str(response.get('state') or PROVIDER_NONE),
-            'shot_id': response.get('shot_id'),
-            'path': response.get('path'),
-        }, True
+        return response, True
 
     def runmanager_alive(self, timeout=None):
         """Ask runmanager whether it is there, and say whether it answered.

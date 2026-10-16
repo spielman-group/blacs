@@ -207,11 +207,11 @@ class IntegrationFixture(object):
         self.while_running = []
         self.passes_left = 0
         self.executor = self.make_executor()
-        self.real_blacs_app = getattr(blacs.__main__, 'app', None)
-        blacs.__main__.app = types.SimpleNamespace(shot_executor=self.executor)
-        self.addCleanup(self.restore_blacs_app)
 
-        self.blacs_server = BlacsServer(bind_address='tcp://127.0.0.1')
+        self.blacs_server = BlacsServer(
+            types.SimpleNamespace(shot_executor=self.executor),
+            bind_address='tcp://127.0.0.1',
+        )
         self.addCleanup(self.blacs_server.shutdown)
         self.status_client = BlacsClient(
             host='127.0.0.1', port=self.blacs_server.port, timeout=1
@@ -232,12 +232,6 @@ class IntegrationFixture(object):
             del runmanager.__main__.app
         else:
             runmanager.__main__.app = self.real_runmanager_app
-
-    def restore_blacs_app(self):
-        if self.real_blacs_app is None:
-            del blacs.__main__.app
-        else:
-            blacs.__main__.app = self.real_blacs_app
 
     def make_executor(self):
         # The plain executor, then the few things this suite needs behind it.

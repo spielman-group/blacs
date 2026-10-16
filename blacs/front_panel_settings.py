@@ -277,7 +277,7 @@ class FrontPanelSettings(object):
                             self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table)
                         else:
                             if not silent:
-                                self.blacs.error_dialog("Front Panel not saved.")
+                                self.blacs.error_dialog("Front Panel not saved.", information=True)
                             else:
                                 logger.info("Front Panel not saved as it already existed in the h5 file '"+current_file+"'")
                             return
@@ -287,7 +287,10 @@ class FrontPanelSettings(object):
             else:
                 # Create Error dialog (invalid connection table)
                 if not silent:
-                    self.blacs.error_dialog("The Front Panel was not saved as the file selected contains a connection table which is not a subset of the BLACS connection table.")
+                    self.blacs.error_dialog(
+                        "The Front Panel was not saved as the file selected contains a connection table which is not a subset of the BLACS connection table.",
+                        information=True,
+                    )
                 else:
                     logger.info("Front Panel not saved as the connection table in the h5 file '"+current_file+"' didn't match the current connection table.")
                 return
@@ -357,8 +360,10 @@ class FrontPanelSettings(object):
         # Save BLACS Main GUI Info
         dataset = data_group.create_dataset("_notebook_data",data=tab_data)
         dataset.attrs['plugin_data'] = repr(plugin_data)
-        # A shot file records the front panel's values, not where BLACS's
-        # window was or what its shot execution was set to.
+        # A shot file records the front panel's values, not what BLACS's shot
+        # execution was set to, and only BLACS's own settings file records
+        # where its window was.
         if not shot_file:
-            dataset.attrs['window_geometry'] = repr(window_data['geometry'])
             dataset.attrs['shot_execution_data'] = repr(window_data['_shot_execution'])
+        if hdf5_file.filename == self.settings_path:
+            dataset.attrs['window_geometry'] = repr(window_data['geometry'])

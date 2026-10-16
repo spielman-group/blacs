@@ -50,6 +50,7 @@ class SaveAndRestoreTests(unittest.TestCase):
         # of which store_front_panel_in_h5 touches unless asked to save the
         # connection table:
         self.settings = FrontPanelSettings.__new__(FrontPanelSettings)
+        self.settings.settings_path = self.path
 
     def store(self):
         tab_data, notebook_data, window_data = a_front_panel()

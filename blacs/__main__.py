@@ -137,11 +137,7 @@ class BLACSWindow(ThemedWindow, QMainWindow):
                 self.blacs.exiting = True
                 self.blacs.shot_executor.stop()
                 self.blacs.settings.close()
-                if blacs_server is not None:
-                    # None while BLACS is still starting. Raising here left
-                    # exiting set with nothing able to clear it, so the window
-                    # could never be closed afterwards.
-                    blacs_server.shutdown()
+                self.blacs.server.shutdown()
                 plugins.manager.close_plugins()
 
                 inmain_later(self.blacs.on_save_exit)
@@ -345,6 +341,12 @@ class BLACS(LabscriptGuiApplication):
         self.ui.actionOpen.triggered.connect(self.on_load_front_panel)
         self.ui.actionExit.triggered.connect(self.ui.close)
 
+        # The server answers questions about this BLACS, so it starts once there
+        # is a BLACS to describe: one started earlier would spend the connection
+        # table load telling a runmanager that this BLACS had failed.
+        splash.update_text('starting experiment server')
+        self.server = BlacsServer(self, int(self.exp_config.get('ports', 'blacs')))
+
         splash.update_text('done')
         logger.info('showing UI')
         self.ui.show()
@@ -445,9 +447,9 @@ class BLACS(LabscriptGuiApplication):
                         )
                 except Exception as e:
                     logger.exception("Unable to load the front panel in %s."%(filepath))
-                    self.error_dialog("Unable to load the front panel. The error encountered is printed below.\n\n%s"%str(e))
+                    self.error_dialog("Unable to load the front panel. The error encountered is printed below.\n\n%s"%str(e), information=True)
             else:
-                self.error_dialog("You did not select a file ending with .h5 or .hdf5. Please try again")
+                self.error_dialog("You did not select a file ending with .h5 or .hdf5. Please try again", information=True)
                 QTimer.singleShot(10,self.on_load_front_panel)
 
     def on_save_exit(self):
@@ -552,13 +554,12 @@ class BLACS(LabscriptGuiApplication):
     def on_open_preferences(self,*args,**kwargs):
         self.settings.create_dialog()
 
-# Bound in the startup below, after BLACS itself. Declared here because the
-# close handler reads it as a global and can run before that: the main window
-# is shown partway through startup, which then goes on building device tabs.
-blacs_server = None
-
-
 class BlacsServer(ZMQServer):
+    def __init__(self, blacs, *args, **kwargs):
+        # Set first, as the server answers from the moment it starts:
+        self.blacs = blacs
+        super().__init__(*args, **kwargs)
+
     def handle_get_status(self):
         """Report what BLACS is doing, for a runmanager user who cannot see it.
 
@@ -566,7 +567,7 @@ class BlacsServer(ZMQServer):
         clearing what stopped them, restarting a device and aborting a shot all
         stay with the operator standing at this apparatus. Not decorated to run
         on the GUI thread, so that a BLACS busy with a shot still answers."""
-        return app.shot_executor.get_status_snapshot()
+        return self.blacs.shot_executor.get_status_snapshot()
 
 
 if __name__ == '__main__':
@@ -607,7 +608,6 @@ if __name__ == '__main__':
         exp_config, 'blacs', f'{hostname()}_BLACS.h5', ensure_directory=True
     )
 
-    port = int(exp_config.get('ports', 'blacs'))
 
     # Create Connection Table object
     splash.update_text('loading connection table')
@@ -623,13 +623,6 @@ if __name__ == '__main__':
     app = BLACS(qapplication)
 
     logger.info('BLACS instantiated')
-
-    # Start experiment server. After BLACS itself, because the server answers
-    # questions about it: one started earlier would spend the connection table
-    # load telling a runmanager that this BLACS had failed, rather than that it
-    # was still starting.
-    splash.update_text('starting experiment server')
-    blacs_server = BlacsServer(port)
 
     splash.hide()
 

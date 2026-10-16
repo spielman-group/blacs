@@ -321,8 +321,8 @@ directory for the day they were made.
 
 The **local override shot** is BLACS's own, selected in the BLACS GUI. BLACS
 runs it whenever an enabled **Request shots** produced no runmanager shot — the
-queue is paused or empty, or runmanager could not be reached or its reply could
-not be read — but not while the shot runmanager will offer next is still
+queue is paused or empty, or runmanager could not be reached — but not while
+the shot runmanager will offer next is still
 compiling, which BLACS waits for instead. It belongs to no runmanager queue, so
 its completions are reported to nobody: they reach neither runmanager nor lyse,
 which is what keeps repetitions of a shot nobody submitted out of the analysis.
