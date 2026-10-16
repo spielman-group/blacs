@@ -456,7 +456,8 @@ class Tab:
         one. Use the path when the class's module has imports that the main process
         must not run or cannot satisfy, as with a remote worker. ``workerargs``
         become attributes of the worker, along with the device's connection table
-        properties, which they override. The process starts once the state machine
+        properties, which they override; a name the Worker class already has is
+        skipped with a warning. The process starts once the state machine
         mainloop runs, so startup errors are handled like any other."""
 
         if workerargs is None:
@@ -505,7 +506,7 @@ class Tab:
         QTimer.singleShot(delay,execute_timeout)
     
     def statemachine_timeout_add(self,delay,statefunction,*args,**kwargs):
-        """Queue ``statefunction(*args, **kwargs)`` now, and again every ``delay`` ms.
+        """Queue ``statefunction(*args, **kwargs)`` now, and again ``delay`` ms after each run.
 
         ``statefunction`` is a ``define_state`` method of this tab, queued only
         while the tab is in one of its allowed modes. Adding the same function again
@@ -663,8 +664,9 @@ class Tab:
         """Describe a call of ``worker_function(*args, **kwargs)`` in a worker.
     
         Yield this from a ``define_state`` method: the named worker runs the call
-        and its return value is sent back to the generator. The arguments and the
-        result must be picklable."""
+        and its return value is sent back to the generator. If the call raises,
+        ``None`` is sent instead and the error is shown on the tab. The arguments
+        and the result must be picklable."""
         return worker_process,worker_function,args,kwargs
         
     def set_terminal_visible(self, visible):
@@ -805,8 +807,9 @@ class Worker(Process):
         """Override to set the worker up, in the worker process.
 
         It is the first job the worker runs, after the connection table properties
-        and ``workerargs`` have become attributes. Import hardware modules here, not
-        at the top of your file, so a restarted worker imports them afresh."""
+        and ``workerargs`` have become attributes; a name the Worker class already
+        has is skipped with a warning. Import hardware modules here, not at the top
+        of your file, so they load only in the worker process, not in BLACS."""
         pass
     
     def run(self, worker_name, device_name, extraargs):
@@ -1061,8 +1064,8 @@ class MyTab(Tab):
 class MyWorker(Worker):
     def init(self):
         # init, not __init__, is the first call in the new process. Import hardware
-        # modules here, not at the top of the file, so a restarted worker imports
-        # them afresh; `global` makes the import visible to the other methods.
+        # modules here, not at the top of the file, so they load only in the worker
+        # process, not in BLACS; `global` makes them visible to the other methods.
         global serial; import serial
         self.logger.info('got x! %d' % self.x)
         # Fail now and then, to exercise error handling on init.

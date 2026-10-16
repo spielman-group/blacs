@@ -376,7 +376,8 @@ class DeviceTab(Tab):
         """Override to restore the dict that ``get_save_data`` returned.
 
         It may be empty or lack keys, as when BLACS first starts on a PC or its
-        datastore has been destroyed, so handle that."""
+        datastore has been destroyed, so handle that. It also holds the tab's own
+        ``_terminal_visible`` and ``_splitter_sizes``."""
         return
     
     def update_from_settings(self,settings):
@@ -697,8 +698,8 @@ class DeviceWorker(Worker):
     """Dummy worker for the demo tabs below."""
     def init(self):
         # init, not __init__, is the first call in the new process. Import hardware
-        # modules here, not at the top of the file, so a restarted worker imports
-        # them afresh; `global` makes the import visible to the other methods.
+        # modules here, not at the top of the file, so they load only in the worker
+        # process, not in BLACS; `global` makes them visible to the other methods.
         global serial; import serial
         global time; import time
         

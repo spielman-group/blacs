@@ -54,7 +54,7 @@ class FrontPanelSettings:
                 
         try:
             saved_ct = ConnectionTable(self.settings_path, logging_prefix='BLACS', exceptions_in_thread=True)
-            ct_match,error = self.connection_table.compare_to(saved_ct)
+            ct_match, _ = self.connection_table.compare_to(saved_ct)
 
             with h5py.File(self.settings_path,'r') as hdf5_file:
                 dataset = hdf5_file['/front_panel'].get('_notebook_data',[])
@@ -101,8 +101,8 @@ class FrontPanelSettings:
 
     def handle_return_code(self,row,result,settings,question,error):
         # The codes check_row returns: 1 restore to the device, 2 restore to the
-        # device now at that connection, 3 ask whether to restore an unnamed device's
-        # values (also follows 2), -1 device missing, -2 device changed.
+        # channel the named device has moved to, 3 ask whether to restore an unnamed
+        # device's values (also follows 2), -1 device missing, -2 device changed.
         if isinstance(result, tuple):
             connection = result[1]
             result = result[0]

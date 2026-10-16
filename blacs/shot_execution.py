@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /shot_execution.py                                           #
+# /blacs/shot_execution.py                                          #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -51,9 +51,9 @@ from runmanager.client import (
     RunmanagerClient,
 )
 
-# Reply deadline for "are you there", paid once per shot while runmanager is
-# absent. Too short and a merely remote runmanager is judged absent; too long
-# adds dead time to every shot, so err long. Not tied to communication_timeout.
+# Default reply deadline for "are you there" (labconfig [timeouts]
+# liveness_timeout), paid once per shot while runmanager is absent. Err long, and
+# keep it apart from communication_timeout; see shot-management.rst.
 LIVENESS_TIMEOUT = 5
 
 # What the runmanager light says. Requesting with nothing offered is not
@@ -405,7 +405,8 @@ class ShotExecutor:
     def set_status(self, status_text, shot_filepath=None):
         # Published as one immutable value, so a status query on the server
         # thread answers lock-free while the GUI thread runs a shot. The id is
-        # taken here: _current_shot_id clears at the outcome, the path does not.
+        # taken here: _current_shot_id clears at the outcome but the path does not,
+        # and a path with no id is reported to runmanager as a local override shot.
         status_text = str(status_text)
         self.published_status = PublishedStatus(
             text=status_text,

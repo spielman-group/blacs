@@ -93,7 +93,7 @@ class Plugin(BasePlugin):
                 self.event_queue.put('shot complete')
 
     def mainloop(self):
-        # Shots are deleted in a separate thread so the queue does not wait on
+        # Shots are deleted in a separate thread so the shot loop does not wait on
         # network communication to acquire the lock.
         while True:
             try:

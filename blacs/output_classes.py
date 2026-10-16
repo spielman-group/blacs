@@ -501,7 +501,7 @@ class Image:
         self._widget_list = []
         
         if x is not None and y is not None:
-            self.location = f'Location: ({x}, {y}) '
+            self.location = f'Location: ({int(x)}, {int(y)}) '
         else:
             self.location = ""
         
@@ -542,7 +542,7 @@ class Image:
         self._update_lock(self._settings['locked'])
         
     def create_widget(self, *args, **kwargs):
-        widget = ImageOutput(f'{self._hardware_name} ({self._connection_name})\n{self.location}Dimensions({self.width}, {self.height})',self.width, self.height, *args,**kwargs)
+        widget = ImageOutput(f'{self._hardware_name} ({self._connection_name})\n{self.location}Dimensions({int(self.width)}, {int(self.height)})',self.width, self.height, *args,**kwargs)
         self.add_widget(widget)
         return widget
         
