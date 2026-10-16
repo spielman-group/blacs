@@ -297,9 +297,7 @@ identifier.
 Both are informational only. Apart from answering a ``hello`` ping,
 ``get_status`` is the only command BLACS's server serves, and that is
 deliberate: enabling requests, clearing what stopped them, restarting a device
-and aborting a shot all stay with the operator standing at the apparatus. There is an architecture
-guard in each repository's test suite that fails if that changes, or if the
-superseded request/accept/reject/report calls come back.
+and aborting a shot all stay with the operator standing at the apparatus.
 
 Default shots and the local override shot
 -----------------------------------------
