@@ -46,9 +46,9 @@ class SaveAndRestoreTests(unittest.TestCase):
         self.addCleanup(
             lambda: os.path.exists(self.path) and os.remove(self.path)
         )
-        # __init__ only records the settings path and connection table, neither
-        # of which store_front_panel_in_h5 touches unless asked to save the
-        # connection table:
+        # __init__ only records the settings path and connection table. The
+        # settings path decides whether the window is saved; the connection
+        # table is read only when asked to save it:
         self.settings = FrontPanelSettings.__new__(FrontPanelSettings)
         self.settings.settings_path = self.path
 

@@ -115,7 +115,11 @@ merge that push-based behavior back in.
 apparatus is doing. Enabling requests, clearing the error that stopped them,
 restarting a device and aborting a shot stay with the operator here. Because
 the handler dispatches whatever `handle_` method it finds, adding one puts that
-command on the wire; `tests/test_architecture.py` fails if that happens.
+command on the wire.
+
+`BlacsServer` is given the BLACS it reports on and is built at the end of
+`BLACS.__init__`, just before the window is shown; upstream builds its
+`ExperimentServer` at module level.
 
 ### `blacs/shot_execution.py`
 
@@ -142,8 +146,7 @@ Current flow is:
    report how the last shot turned out and ask for the next one in one message.
    The reply carries a provider `state` (`shot`, `paused`, `pending` or
    `none`), a stable `shot_id` and an agnostic path
-3. if runmanager offers nothing — paused, empty, unreachable, or a reply we
-   could not read — use `local_override_lineEdit` if set; if its next shot is
+3. if runmanager offers nothing — paused, empty or unreachable — use `local_override_lineEdit` if set; if its next shot is
    still compiling (`pending`), wait and go back to step 1
 4. convert the chosen agnostic path to local form
 5. validate/prepare it with `process_request()`
@@ -231,7 +234,10 @@ and save it under:
 Parameter changed:
 
 - `save_queue_data` -> `shot_file`, inverted: `shot_file=True`, from the shot
-  loop, writes neither `window_geometry` nor `shot_execution_data`
+  loop, writes no `shot_execution_data`
+- `window_geometry` is written only into BLACS's own settings file, decided by
+  the file's name: upstream wrote `window_*` attributes into every file, shot
+  files included
 
 Attribute written changed:
 

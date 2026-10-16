@@ -342,8 +342,8 @@ class BLACS(LabscriptGuiApplication):
         self.ui.actionExit.triggered.connect(self.ui.close)
 
         # The server answers questions about this BLACS, so it starts once there
-        # is a BLACS to describe: one started earlier would spend the connection
-        # table load telling a runmanager that this BLACS had failed.
+        # is a BLACS to describe: one started earlier would spend BLACS's
+        # start-up telling a runmanager that this BLACS had failed.
         splash.update_text('starting experiment server')
         self.server = BlacsServer(self, int(self.exp_config.get('ports', 'blacs')))
 
@@ -607,7 +607,6 @@ if __name__ == '__main__':
     settings_path = get_default_appconfig_file(
         exp_config, 'blacs', f'{hostname()}_BLACS.h5', ensure_directory=True
     )
-
 
     # Create Connection Table object
     splash.update_text('loading connection table')
