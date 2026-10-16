@@ -34,7 +34,7 @@ owner makes its changes.
 | P2 | blacs's seven plugins do not inherit `BasePlugin`, and carry about 80 lines of hooks that return `None`, `[]` or `{}`. | With P1, `BasePlugin` gains no-op `get_save_data()` and `close()`; every blacs plugin inherits it and drops its no-op hooks. | lu +10; blacs −80 |
 | P3 | Discovery reads only the application's own `plugins/` folder, so a plugin shipped by another package, such as labscript-agents giving lyse a plugin, cannot be found. | `discover_modules()` also reads `importlib.metadata` entry points in a group named per application (for example `lyse.plugins`), under the same enable flags in the labconfig. | lu +15 |
 | P4 | Every event is fired by the same loop: get the handlers, call each, log one that raises. blacs has it four times in `shot_execution.py`, hyde once. | `PluginManager.fire_event(name, *args)` runs that loop and returns the handlers' results. Applications still choose the events, their names and when they fire. The earlier PRD ruled out an `emit()`; this asks Ian to reverse that. | lu +10; blacs −12 |
-| P5 | Saved plugin state has no manager method: `front_panel_settings.py` loops over the plugins itself, and lyse and runmanager would repeat it. | `PluginManager.get_save_data()` returns `{name: data}`, the partner of `instantiate_plugins(plugin_settings)`. blacs stores it in its configuration with the front-panel move (seen-while-mapping). | lu +8; blacs −6 |
+| P5 | Saved plugin state has no manager method: `front_panel_settings.py` loops over the plugins itself, and lyse and runmanager would repeat it. | `PluginManager.get_save_data()` returns `{name: data}`, the partner of `restore_save_data(saved)`. Each application stores it where it keeps its state. | lu +8; blacs −6 |
 | P6 | `discover_modules()` requires a config object; hyde passes a `NullConfig` and replaces the method wholesale. | `config=None` loads every plugin found. hyde's override can then go, at hyde's choosing. | lu +3 |
 | P7 | BLACS's `get_tab_classes()` and `tabs_created()` hooks: upstream's, no plugin in any suite repo uses them, and they already warn as deprecated. | Ian decides: keep, or delete the 38 lines in `blacs/__main__.py`. A lab's own plugin outside the repos would lose its tabs. | blacs −38 |
 
@@ -83,16 +83,9 @@ Decided by Ian: the plugin says what, and the application says where.
   that raises. `PluginManager.restore_save_data(saved)` hands each plugin its own
   part, at start-up and for a configuration or project loaded while the
   application runs.
-- `Settings` keeps its pages' data in a dict that the application saves and
-  loads, in place of its own HDF5 file; `get_save_data()` returns
-  `{page name: data}`.
-- Saved data is whatever TOML can hold, as in every application's configuration:
-  a blacs plugin that saves `None` today leaves that key out instead.
-- blacs stores the two under `plugins` and `settings` in its one TOML
-  configuration, `blacs.toml` in the labconfig's `app_saved_configs/blacs` folder,
-  found by `get_default_appconfig_file` as lyse's and runmanager's are. The old
-  `<host>_BLACS.h5` there is read only at a first start that finds no TOML (see
-  "Settled inputs").
+- blacs keeps writing its plugins' data into its HDF5 settings file, as now
+  (Ian): moving BLACS's saved state is a bigger change than this pass. Settings
+  pages keep their HDF5 storage and save when their dialog closes.
 - hyde's plugins override the two `BasePlugin` methods, calling `super()` first
   for the base GUI state, and hyde decides where its session stores them. hyde's
   session is briefed when this lands.
@@ -100,18 +93,8 @@ Decided by Ian: the plugin says what, and the application says where.
 | Who | Change | Size |
 | --- | --- | --- |
 | labscript-utils | the two `BasePlugin` hooks, the two manager methods, `Plugin()` built with no settings | +25 |
-| labscript-utils | `Settings` stores a dict; its HDF5 storage goes | −45 +15 |
-| blacs | every plugin implements the two hooks; `front_panel_settings.py` stops looping over plugins; the `eval()` of saved plugin data goes. Part of the front-panel move | about −20 |
+| blacs | every plugin implements the two hooks; `front_panel_settings.py` stops looping over plugins | about −20 |
 | hyde | its plugins override the two hooks; `get_session_toml_data` goes | about ±40, hyde's session |
-
-With the move, Load front panel restores plugin state too. Then the
-`restore_save_data` of connection_table and delete_repeated_shots has to update
-their live controls: today it sets only what `plugin_setup_complete` reads.
-
-Open with Ian: a settings page is now written to its file the moment its dialog
-closes. In a `LabscriptGuiApplication` it would be saved with the
-configuration, so on Save, or through the prompt on quitting, as lyse and
-runmanager save everything else.
 
 ### The plugin change: API
 
@@ -139,12 +122,6 @@ labscript-utils, `labscript_utils/plugins.py`, by its owner:
     and `close_plugins` stay.
 - `MenuContext(logger=None, icon_factory=None)`: a contribution's `icon` is set
   on its action as `icon_factory(icon)`.
-
-With the front-panel move, after Ian's answers on it:
-`labscript_utils.settings.Settings(saved_data=None, parent=None, page_classes=())`
-builds each page from `saved_data.get(page name, {})`, keeps a page's `save()`
-when the dialog is accepted, and returns `{page name: data}` from
-`get_save_data()`; its HDF5 storage goes.
 
 blacs, by its owner: the plugins inherit `BasePlugin`, contribute menus,
 settings pages and notifications to contexts that `__main__.py` registers
@@ -298,9 +275,8 @@ The shot loop and its exchange, over a stand-in runmanager.
 
 ### tests/test_front_panel_settings.py
 
-Both go with the front-panel move onto the application configuration.
 - `test_the_front_panel_can_be_written_and_read_back`: saved channel values and
-  tab placement read back. **keep** until then.
+  tab placement read back. **keep**.
 - `test_the_saved_strings_are_bytes_as_earlier_versions_wrote_them`: **cut**:
   the numpy 2 dtype rename.
 
@@ -322,15 +298,9 @@ coordinator.
 - **Transition to manual** waits until every pseudoclock has finished. This pass
   chooses the mechanism by comparing a labscript compile-time change, a block in
   blacs, and any other option.
-- **The front panel's state** moves off its HDF5 file onto
-  `LabscriptGuiApplication`'s configuration save and window restore, as lyse,
-  runmanager and runviewer use.
-- **The old HDF5 front-panel file** is still read when no TOML configuration
-  exists, once, after which the state is saved as TOML. That path is marked as
-  labscript-utils' INI fallback is (`labconfig.py:261`): the comment
-  `# LEGACY HDF5 FRONT PANEL COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.`,
-  and a `warnings.warn(..., FutureWarning)` when the old file is actually read,
-  saying it will be converted to TOML.
+- **BLACS's saved state** stays in its HDF5 settings file, the shot file's
+  `/front_panel` group stays, and Settings keeps its HDF5 storage (Ian: changing
+  the save files is a much bigger change than expected).
 
 ## Step 2.1: behaviour no one asked for
 
