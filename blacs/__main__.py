@@ -167,23 +167,9 @@ class BLACS(LabscriptGuiApplication):
 
     @staticmethod
     def _restore_shot_execution_data(blacs_settings):
-        if 'shot_execution_data' in blacs_settings:
-            key = 'shot_execution_data'
-        else:
-            # Legacy HDF5 save-data attribute from before BLACS shot execution
-            # terminology was renamed.
-            key = 'queue_data'
-
-        if key not in blacs_settings:
+        if 'shot_execution_data' not in blacs_settings:
             return {}
-
-        data = blacs_settings[key]
-        if isinstance(data, str):
-            try:
-                data = eval(data)
-            except NameError:
-                data = {}
-        return data
+        return ast.literal_eval(blacs_settings['shot_execution_data'])
 
     def __init__(self,application):
         splash.update_text('loading graphical interface')

@@ -102,20 +102,6 @@ class FrontPanelSettings(object):
                             else:
                                 data_dict[columns[i]] = row[i]
                         settings,question,error = self.handle_return_code(data_dict,result,settings,question,error)
-
-                # Else Legacy restore from GTK save data!
-                else:
-                    # open Datasets
-                    type_list = ["AO", "DO", "DDS"]
-                    for key in type_list:
-                        dataset = hdf5_file["/front_panel"].get(key, [])
-                        for row in dataset:
-                            result = self.check_row(row,ct_match,self.connection_table,saved_ct)
-                            columns = ['name', 'device_name', 'channel', 'base_value', 'locked', 'base_step_size', 'current_units']
-                            data_dict = {}
-                            for i in range(len(row)):
-                                data_dict[columns[i]] = row[i]
-                            settings,question,error = self.handle_return_code(data_dict,result,settings,question,error)
         except Exception as e:
             logger.info("Could not load saved settings")
             logger.info(str(e))

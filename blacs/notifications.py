@@ -148,11 +148,3 @@ class Notifications(object):
             return 'hidden'
         else:
             return 'closed'
-    
-    def close_all(self):
-        for notification in self._notifications:
-            try:
-                notification.close()
-            except Exception:
-                pass
-                

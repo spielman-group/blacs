@@ -56,12 +56,6 @@ class CompileAndRestart(QDialog):
         else:
             event.accept()
     
-    def on_activate_default(self,window):
-        if self.button_restart.get_sensitive():
-            self.restart()
-        elif self.button_compile.get_sensitive():
-            self.compile()
-                
     def compile(self):
         self.ui.compile.setEnabled(False)
         self.ui.cancel.setEnabled(False)

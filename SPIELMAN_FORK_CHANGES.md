@@ -41,10 +41,9 @@ below instead of trying to preserve the old queue terminology.
 - HDF5 attr `queue_data` -> `shot_execution_data`
 - `window_data["_main_window"]["_queue"]` -> `window_data["_shot_execution"]`
 
-Legacy read compatibility is still required:
-
-- `BLACS._restore_shot_execution_data()` reads `shot_execution_data`
-- if absent, it falls back to legacy `queue_data`
+`BLACS._restore_shot_execution_data()` reads `shot_execution_data` only; a
+settings file with only the legacy `queue_data` restores no shot execution
+state.
 
 ### UI object renames
 
@@ -78,14 +77,9 @@ These are the changes most likely to matter when replaying upstream code.
 
 #### `BLACS._restore_shot_execution_data(blacs_settings)`
 
-This helper is fork-specific. It centralizes the legacy read fallback:
-
-- use `shot_execution_data` if present
-- otherwise fall back to `queue_data`
-- `eval()` string values as before
-
-If upstream adds new save-data restore logic for the old queue path, port it
-here instead of reintroducing direct `queue_data` handling throughout BLACS.
+This helper is fork-specific: it reads `shot_execution_data` with
+`ast.literal_eval`, or returns `{}` if the file has none. If upstream adds
+save-data restore logic for its queue, port it here, not as `queue_data`.
 
 #### BLACS startup wiring
 
@@ -318,8 +312,7 @@ When pulling new upstream `master` changes into this fork:
 
 2. Check whether upstream changed queue save/restore logic in `__main__.py` or
    `front_panel_settings.py`.
-   Port them through the `shot_execution_data` path, keeping the legacy
-   `queue_data` read fallback.
+   Port them through the `shot_execution_data` path.
 
 3. Check whether upstream changed plugin references to
    `BLACS['experiment_queue']` or old queue UI object names.
