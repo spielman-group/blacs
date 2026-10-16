@@ -392,7 +392,7 @@ and zprocess included; four appear nowhere but their own definition.
 | K1 | `blacs/measure_ball/`: the Measure Ball game's seven files (`RabiBall.exe`, a DLL, its data, sound and splash) | The button that ran it was removed (`3b18ec7`); nothing refers to the folder | Delete the folder | −7 files, 6.6 MB |
 | K2 | `CompileAndRestart.on_activate_default` | Upstream's GTK leftover: it calls `get_sensitive()`, a GTK method, and nothing connects it | Delete | −6 |
 | K3 | `Notifications.close_all` | Upstream's, never called; it calls `close()` on the notification classes rather than their instances | Delete | −7 |
-| K4 | `Tab.statemachine_timeout_remove_all` | Upstream's device-tab method, called by no tab in any repo | Delete. A lab's own device tab outside the repos that calls it would break | −10 |
+| K4 | `Tab.statemachine_timeout_remove_all` | Upstream's device-tab method, called by no tab in any repo | Delete. A lab's own device tab outside the repos that calls it would break. Held: it is documented in upstream's device guide (`docs/How to add a new device/`, `.tex` and `.pdf`), which the search missed | −10 |
 | K5 | `FrontPanelSettings.restore`'s "legacy restore from GTK save data" (`AO`, `DO`, `DDS` datasets) | Front panels saved by the GTK BLACS, from before 2013 | Delete | −13 |
 | K6 | `_restore_shot_execution_data`'s `queue_data` key, and its `NameError` catch for saves from before qtutils 2 | `queue_data` is what Production's BLACS writes; the fork writes `shot_execution_data` | Delete, and read `shot_execution_data` only. A settings file last saved by Production's BLACS then loses its local override path and last shots folder, once | −12 |
 
@@ -409,3 +409,53 @@ keeps (P7).
 | `PluginRefactor` | Three commits not in `Development`: two merges, and `57bb71b`, which CODEX says must never be merged. This pass's plugin change supersedes it | Delete |
 | `RunmanagerTOMLGlobals` | Three merge commits not in `Development`, whose content is | Delete |
 | `spielman_retired/share` | Reference only, in five repos | Left to the coordinator, as one decision for all five |
+
+## Step 2.5: documents, TODO, FIXME, XXX
+
+Marks: **do** (easy and worthwhile), **docs** (worthwhile but not easy: it
+moves to a "Possible improvements" section of the docs), **go** (not
+worthwhile, or already done; deleted with any commented-out code beside it).
+There are no FIXMEs, and the XXXs are `_repXXXXX.h5` in the docs.
+
+### TODOs
+
+| # | Where | TODO | Mark |
+| --- | --- | --- | --- |
+| T1 | `output_classes.py:146`, `:156` | Name the device and calibration class in a unit-conversion error | go: the message names the channel and its connection |
+| T2 | `output_classes.py:284`, `:514`, `:636`, `:726` | "Make this error better", for removing a widget that is not registered | go: a programming error, not a user's |
+| T3 | `output_classes.py:1011` | A DDS case in the file's own demo | go |
+| T4 | `front_panel_settings.py:70` | Fill `tab_data` for `restore_window` | go: `restore_window` handles a missing key |
+| T5 | `front_panel_settings.py:313` | Save outputs whose value is a string | docs |
+| T6 | `shot_execution.py:367` | Show which connections differ when a shot's connection table does not fit | docs |
+| T7 | `shot_execution.py:618` | Make the 300 s programming timeout a setting | go: no one has asked for it |
+| T8 | `shot_execution.py:923` | A race if BLACS closes as the master pseudoclock starts | go: a missing tab raises inside the shot, which stops requests |
+| T9 | `device_base_class.py:462` | Only update a channel the user has not changed | go: the line below already checks it |
+| T10 | `device_base_class.py:499`, `:501` | Keep the radio buttons' state, and sort the channels, in the changed-values dialog | go |
+| T11 | `device_base_class.py:589` | Disable a device's widgets while its values differ, with a GTK line commented out | go |
+| T12 | `notifications.py:39` | "Do we need to pass anything in here?" | go |
+| T13 | `notifications.py:80` | Make the minimised widget, with `#ui2.hide()` | go: the next line makes it |
+| T14 | `notifications.py:99` | "Cleanup a little more" | go |
+| T15 | `__main__.py:212`, `:423` | Show the channels a front panel could not restore (`restore()`'s `question` and `error`, now dropped silently) | docs |
+| T16 | `__main__.py:416` | Warn that locked channels are not restored | go: the warning already says so |
+| T17 | `plugins/general/__init__.py:62` | Save settings of types other than strings | go |
+| T18 | `docs/source/conf.py:114` | intersphinx for desktop-app and spinapi | go (approved) |
+
+The three docs items go in a "Possible improvements" section added to
+`docs/source/usage.rst`.
+
+### Commented-out code
+
+All of it goes, about 25 lines: `__main__.py:115`, `:177`, `:183`, `:450-451`;
+`output_classes.py:408`; `device_base_class.py:592`; `tab_base_classes.py:211`,
+`:393-394`, `:405`, `:548`, `:619`, `:783`, `:1000`, `:1065`, `:1094`, `:1104`;
+`notifications.py:81`; and the commented `Menu` and `Notification` classes in
+`plugins/general/__init__.py`. The property dictionaries commented in
+`device_base_class.py:103-164` stay: they document the format a tab passes.
+
+### Documents
+
+| # | Document | Proposal |
+| --- | --- | --- |
+| P1 | `docs/source/plugins.rst` says plugins reach "the shot queue" | Say the shot executor (do) |
+| P2 | `SPIELMAN_FORK_CHANGES.md`, at the root: the guide to merging upstream into the fork | Ian decides: keep it as the fork's merge guide, or move it into `docs/` |
+| P3 | `docs/How to add a new device/` (`main.tex`, `main.pdf`): upstream's device guide | Keep: upstream's documentation |
