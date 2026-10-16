@@ -28,7 +28,7 @@ import runmanager.__main__
 from runmanager.__main__ import RunManager, RunmanagerServer
 from runmanager.blacs_status import blacs_state
 from runmanager.client import RunmanagerClient
-from runmanager.queueing import EMPTY_QUEUE_DEFAULT_LABSCRIPT, QueueController, QueueManager
+from runmanager.queueing import QueueController, QueueManager
 
 # fixtures does the guarded import of BLACS; by the time this runs the module
 # is in sys.modules, so importing it again here costs nothing and warns nothing.
@@ -337,14 +337,15 @@ class IntegrationFixture(object):
         self.executor._manager_running = True
         ShotExecutor._manage(self.executor)
 
-    def restart_runmanager_server(self):
-        port = self.runmanager_server.port
-        self.runmanager_server.shutdown()
-        self.runmanager_server = RunmanagerServer.__new__(RunmanagerServer)
-        ZMQServer.__init__(
-            self.runmanager_server, port=port, bind_address='tcp://127.0.0.1'
-        )
-        self.addCleanup(self.runmanager_server.shutdown)
+    def lose_next_request(self):
+        """Let the next exchange reach runmanager without being applied, and
+        answer only after BLACS has stopped waiting for it."""
+
+        def stall_unapplied(*args, **kwargs):
+            del self.runmanager.queue_exchange
+            time.sleep(2 * REPLY_TIMEOUT)
+
+        self.runmanager.queue_exchange = stall_unapplied
 
     def lose_next_reply(self):
         """Let the next exchange reach runmanager and change its queue, and
@@ -620,6 +621,7 @@ class RequestShotsOffTests(IntegrationFixture, unittest.TestCase):
         self.run_loop(passes=1)
 
         self.assertEqual(self.shots_run, [], 'not even the local override shot')
+        self.assertEqual(self.passes_left, 1, 'and runmanager is not even asked')
         self.assertEqual(
             [(row['path'], row['state']) for row in self.runmanager.rows()],
             [(queued, '')],
@@ -658,12 +660,10 @@ class OutcomeDeliveryTests(IntegrationFixture, unittest.TestCase):
         # The shot runs, and its outcome waits for the next exchange:
         self.run_loop(passes=1)
 
-        self.runmanager_server.shutdown()
-        self.run_loop(passes=1)
-        self.restart_runmanager_server()
-        self.run_loop(passes=1)
+        self.lose_next_request()
+        self.run_loop(passes=3)
 
-        self.assertEqual(self.shots_run, [shot])
+        self.assertEqual(self.shots_run, [shot], 'it is not offered again')
         self.assertEqual(self.runmanager.rows(), [], 'runmanager learned it completed')
         self.assertEqual(len(self.runmanager.analysis_submission.submitted), 1)
 

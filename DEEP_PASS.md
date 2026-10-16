@@ -104,6 +104,10 @@ Decided by Ian: the plugin says what, and the application says where.
 | blacs | every plugin implements the two hooks; `front_panel_settings.py` stops looping over plugins; the `eval()` of saved plugin data goes. Part of the front-panel move | about −20 |
 | hyde | its plugins override the two hooks; `get_session_toml_data` goes | about ±40, hyde's session |
 
+With the move, Load front panel restores plugin state too. Then the
+`restore_save_data` of connection_table and delete_repeated_shots has to update
+their live controls: today it sets only what `plugin_setup_complete` reads.
+
 Open with Ian: a settings page is now written to its file the moment its dialog
 closes. In a `LabscriptGuiApplication` it would be saved with the
 configuration, so on Save, or through the prompt on quitting, as lyse and
