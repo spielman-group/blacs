@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /front_panel_settings.py                                          #
+# /blacs/front_panel_settings.py                                    #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -24,7 +24,7 @@ import blacs.plugins as plugins
 
 logger = logging.getLogger('BLACS.FrontPanelSettings')
 
-class FrontPanelSettings(object):
+class FrontPanelSettings:
     def __init__(self,settings_path,connection_table):
         self.settings_path = settings_path
         self.connection_table = connection_table
@@ -38,31 +38,14 @@ class FrontPanelSettings(object):
         self.blacs = blacs
 
     def restore(self):
-
-        # Get list of DO/AO
-        # Does the object have a name?
-        #    yes: Then, find the device in the BLACS connection table that matches that name
-        #         Also Find the device in the saved connection table.
-        #         Do the connection table entries match?
-        #             yes: Restore as is
-        #             no:  Is it JUST the parent device and "connected to" that has changed?
-        #                      yes: Restore to new device
-        #                      no:  Show error that this device could not be restored
-        #    no: Ok, so it isn't in the saved connection table
-        #        Does this device/channel exist in the BLACS connection table?
-        #            yes: Don't restore, show error that this chanel is now in use by a new device
-        #                 Give option to restore anyway...
-        #            no: Restore as is
-        #
-        # Display errors, give option to cancel starting of BLACS so that the connection table can be edited
-
-        # Create saved connection table
+        # Sorts each saved value into settings (restored), question (an unnamed
+        # channel a device now occupies) or error (device missing or changed); see
+        # check_row.
         settings = {}
         question = {}
         error = {}
         tab_data = {'BLACS settings':{}}
 
-        # See if connection table exists in apparatus h5 file
         with h5py.File(self.settings_path, 'r') as h5file:
             if 'connection table' not in h5file:
                 logger.info('Front panel settings connection table not found!')
@@ -74,7 +57,6 @@ class FrontPanelSettings(object):
             ct_match,error = self.connection_table.compare_to(saved_ct)
 
             with h5py.File(self.settings_path,'r') as hdf5_file:
-                # Get Tab Data
                 dataset = hdf5_file['/front_panel'].get('_notebook_data',[])
 
                 for row in dataset:
@@ -85,10 +67,8 @@ class FrontPanelSettings(object):
                     except Exception:
                         logger.info("Could not load tab data for %s"%tab_name)
 
-                #now get dataset attributes
                 tab_data['BLACS settings'] = dict(dataset.attrs)
 
-                # Get the front panel values
                 if 'front_panel' in hdf5_file["/front_panel"]:
                     dataset = hdf5_file["/front_panel"].get('front_panel', [])
                     for row in dataset:
@@ -120,13 +100,9 @@ class FrontPanelSettings(object):
         return settings,question,error,tab_data
 
     def handle_return_code(self,row,result,settings,question,error):
-        # 1: Restore to existing device
-        # 2: Send to new device
-        # 3: Device now exists, use saved values from unnamed device?
-        #    Note that if 2 has happened, 3 will also happen
-        #    This is because we have the original channel, and the moved channel in the same place
-        #-1: Device no longer in the connection table, throw error
-        #-2: Device parameters not compatible, throw error
+        # The codes check_row returns: 1 restore to the device, 2 restore to the
+        # device now at that connection, 3 ask whether to restore an unnamed device's
+        # values (also follows 2), -1 device missing, -2 device changed.
         if isinstance(result, tuple):
             connection = result[1]
             result = result[0]
@@ -148,22 +124,16 @@ class FrontPanelSettings(object):
         return settings,question,error
 
     def check_row(self,row,ct_match,blacs_ct,saved_ct):
-        # If it has a name
         if row[0] != "-":
             if ct_match:
-                # Restore
                 return 1
             else:
-                # Find if this device is in the connection table
                 connection = blacs_ct.find_by_name(row[0])
                 connection2 = saved_ct.find_by_name(row[0])
 
                 if connection:
-                    # compare the two connections, see what differs
-                    # if compare fails only on parent, connected to:
-                    #    send to new parent
-                    # else:
-                    #     show error, device parameters not compatible with saved data
+                    # A difference in only the parent and port sends the value to the new
+                    # parent; any other difference means the saved data does not fit.
                     result,error = connection.compare_to(connection2)
 
                     allowed_length = 0
@@ -171,23 +141,19 @@ class FrontPanelSettings(object):
                         allowed_length += 1
 
                     if len(error) > allowed_length:
-                        return -2 # failure, device parameters not compatible
+                        return -2
                     elif error == {} and connection.parent.name == connection2.parent.name:
-                        return 1 # All details about this device match
+                        return 1
                     else:
-                        return 2,connection # moved to new device
+                        return 2,connection
                 else:
-                    # no longer in connection table, throw error
                     return -1
         else:
-            # It doesn't have a name
-            # Does the channel exist for this device in the connection table
+            # An unnamed channel is only asked about if a device now occupies it.
             connection = blacs_ct.find_child(row[1],row[2])
             if connection:
-                # throw error, device now exists, should we restore?
                 return 3,connection
             else:
-                # restore to device
                 return 1
 
     @inmain_decorator(wait_for_return=True)
@@ -195,15 +161,11 @@ class FrontPanelSettings(object):
         tab_data = {}
         notebook_data = {}
 
-        # iterate over all tabs
         for device_name,tab in self.tablist.items():
             tab_data[device_name] = {'front_panel':tab.settings['front_panel_settings'], 'save_data': tab.get_all_save_data()}
 
-            # Find the notebook the tab is in
-            #
-            # By default we assume it is in notebook0, on page 0. This way, if a tab gets lost somewhere,
-            # and isn't found to be a child of any notebook we know about,
-            # it will revert back to notebook 1 when the file is loaded upon program restart!
+            # A tab found in no known notebook is saved at notebook 0, page 0, so it
+            # reappears there on restart.
             current_notebook_name = 0
             page = 0
             visible = False
@@ -228,19 +190,9 @@ class FrontPanelSettings(object):
 
     @inmain_decorator(wait_for_return=True)
     def save_front_panel_to_h5(self,current_file,states,tab_positions,window_data,plugin_data,silent = {}, force_new_conn_table = False):
-        # Save the front panel!
-
-        # Does the file exist?
-        #   Yes: Check connection table inside matches current connection table. Does it match?
-        #        Yes: Does the file have a front panel already saved in it?
-        #               Yes: Can we overwrite?
-        #                  Yes: Delete front_panel group, save new front panel
-        #                  No:  Create error dialog!
-        #               No: Save front panel in here
-        #
-        #        No: Return
-        #   No: Create new file, place inside the connection table and front panel
-
+        # An existing file is written only if it has no connection table, a matching
+        # one, or force_new_conn_table is set; an existing front panel is replaced
+        # only after the overwrite question (or silent['overwrite']).
         if os.path.isfile(current_file):
             save_conn_table = True if force_new_conn_table else False
             result = False
@@ -249,28 +201,24 @@ class FrontPanelSettings(object):
                     new_conn = ConnectionTable(current_file)
                     result,error = self.connection_table.compare_to(new_conn)
                 except Exception:
-                    # no connection table is present, so also save the connection table!
+                    # The file has no connection table, so save ours too.
                     save_conn_table = True
 
-            # if save_conn_table is True, we don't bother checking to see if the connection tables match, because save_conn_table is only true when the connection table doesn't exist in the current file
-            # As a result, if save_conn_table is True, we ignore connection table checking, and save the connection table in the h5file.
-
+            # A connection table that is being saved is not compared first.
             if save_conn_table or result:
                 with h5py.File(current_file,'r+') as hdf5_file:
                     if hdf5_file['/'].get('front_panel') is not None:
-                        # Create a dialog to ask whether we can overwrite!
                         if not silent:
                             overwrite = self.blacs.question_dialog(
-                                "This file '%s' already contains a connection table.\n\n"
+                                f"This file '{current_file}' already contains a connection table.\n\n"
                                 "Do you wish to replace the existing front panel configuration "
-                                "in this file?" % current_file,
+                                "in this file?",
                                 default_no=True,
                             )
                         else:
                             overwrite = silent["overwrite"]
 
                         if overwrite:
-                            # Delete Front panel group, save new front panel
                             del hdf5_file['/front_panel']
                             self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table)
                         else:
@@ -280,10 +228,8 @@ class FrontPanelSettings(object):
                                 logger.info("Front Panel not saved as it already existed in the h5 file '"+current_file+"'")
                             return
                     else:
-                        # Save Front Panel in here
                         self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table)
             else:
-                # Create Error dialog (invalid connection table)
                 if not silent:
                     self.blacs.error_dialog(
                         "The Front Panel was not saved as the file selected contains a connection table which is not a subset of the BLACS connection table.",
@@ -294,7 +240,6 @@ class FrontPanelSettings(object):
                 return
         else:
             with h5py.File(current_file,'w') as hdf5_file:
-                # save connection table, save front panel
                 self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table=True)
 
     @inmain_decorator(wait_for_return=True)
@@ -308,16 +253,13 @@ class FrontPanelSettings(object):
 
         front_panel_list = []
         other_data_list = []
-        # 'S' rather than the 'a' these used to say: 'a' was only ever an
-        # alias for it, and numpy 2.0 removed the alias. Same bytes on disk, so
-        # settings files written by earlier versions still read back.
+        # 'S', not the 'a' alias numpy 2 removed. The bytes on disk are the same, so
+        # older settings files still read back.
         front_panel_dtype = [('name','S256'),('device_name','S256'),('channel','S256'),('base_value',float),('locked',bool),('base_step_size',float),('current_units','S256')]
         max_od_length = 2 # empty dictionary
 
-        # Iterate over each device within a class
         for device_name, device_state in tab_data.items():
             logger.debug("saving front panel for device:" + device_name)
-            # Insert front panel data into dataset
             for hardware_name, data in device_state["front_panel"].items():
                 if data != {}:
                     if isinstance(data['base_value'], (str, bytes)):
@@ -335,31 +277,26 @@ class FrontPanelSettings(object):
                     else:
                         logger.warning('Could not save data for channel %s on device %s because the output value (in base units) was not a string or could not be coerced to a float without loss of precision'%(hardware_name, device_name))
 
-            # Save "other data"
             od = repr(device_state["save_data"])
             other_data_list.append(od)
             max_od_length = len(od) if len(od) > max_od_length else max_od_length
 
-        # Create datasets
         if front_panel_list:
             front_panel_array = numpy.empty(len(front_panel_list),dtype=front_panel_dtype)
             for i, row in enumerate(front_panel_list):
                 front_panel_array[i] = row
             data_group.create_dataset('front_panel',data=front_panel_array)
 
-        # Save tab data
         i = 0
         tab_data = numpy.empty(len(notebook_data),dtype=[('tab_name','S256'),('notebook','S2'),('page',int),('visible',bool),('data','S'+str(max_od_length))])
         for device_name,data in notebook_data.items():
             tab_data[i] = (device_name,data["notebook"],data["page"],data["visible"],other_data_list[i])
             i += 1
 
-        # Save BLACS Main GUI Info
         dataset = data_group.create_dataset("_notebook_data",data=tab_data)
         dataset.attrs['plugin_data'] = repr(plugin_data)
-        # A shot file records the front panel's values, not what BLACS's shot
-        # execution was set to, and only BLACS's own settings file records
-        # where its window was.
+        # A shot file records the front panel's values, not the shot-execution
+        # settings, and only BLACS's own settings file records the window geometry.
         if not shot_file:
             dataset.attrs['shot_execution_data'] = repr(window_data['_shot_execution'])
         if hdf5_file.filename == self.settings_path:

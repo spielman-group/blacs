@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /notifications.py                                                 #
+# /blacs/notifications.py                                           #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -18,7 +18,7 @@ from blacs import BLACS_DIR
 
 logger = logging.getLogger('BLACS.NotificationManager') 
 
-class Notifications(object):
+class Notifications:
     def __init__(self, BLACS):
         self._BLACS = BLACS
         self._notifications = {}
@@ -35,31 +35,24 @@ class Notifications(object):
             return False        
         
         try:
-            # instantiate the notification class
             self._notifications[notification_class] = notification_class(self._BLACS) 
             
-            # get the widget
             widget = self._notifications[notification_class].get_widget()
           
-            # get details on whether the widget can be closed or hidden
             properties = self._notifications[notification_class].get_properties()
             
-            # Function shortcuts
             show_func = lambda callback=False: self.show_notification(notification_class, callback)
             hide_func = lambda callback=False: self.minimize_notification(notification_class, callback)
             close_func = lambda callback=False: self.close_notification(notification_class, callback)
             get_state = lambda: self.get_state(notification_class)
             
-            # create layout/widget with appropriate buttons and the widget from the notification class
             ui = UiLoader().load(os.path.join(BLACS_DIR, 'notification_widget.ui'))            
             ui.hide_button.setVisible(bool(properties['can_hide']))
             ui.hide_button.clicked.connect(lambda: hide_func(True))
             ui.close_button.setVisible(bool(properties['can_close']))
             ui.close_button.clicked.connect(lambda: close_func(True))
             ui.widget_layout.addWidget(widget)
-            #ui.hide()
             
-            #save callbacks
             if 'closed_callback' in properties and callable(properties['closed_callback']):
                 self._closed_callbacks[notification_class] = properties['closed_callback']
             elif 'closed_callback' in properties:
@@ -80,24 +73,21 @@ class Notifications(object):
             if not hasattr(self._notifications[notification_class], 'name'):
                 self._notifications[notification_class].name = notification_class.__name__
             ui2.name.setText(self._notifications[notification_class].name)
-            ui2.show_button.setVisible(bool(properties['can_hide'])) #If you can hide, you can also show
+            ui2.show_button.setVisible(bool(properties['can_hide'])) # If you can hide, you can also show
             ui2.show_button.clicked.connect(lambda: show_func(True))
             ui2.close_button.setVisible(bool(properties['can_close']))
             ui2.close_button.clicked.connect(lambda: close_func(True))
             
-            # pass the show/hide/close functions to the notfication class
             self._widgets[notification_class] = ui
             self._minimized_widgets[notification_class] = ui2
             self._notifications[notification_class].set_functions(show_func,hide_func,close_func,get_state)            
             
         except Exception:
             logger.exception('Failed to instantiate Notification class %s.'%notification_class)
-            # Cleanup 
             if notification_class in self._notifications:
                 del self._notifications[notification_class]
             return False
         
-        # add the widgets, initially hidden
         ui.setVisible(False)
         ui2.setVisible(False)
         self._BLACS['ui'].notifications.insertWidget(1,ui)

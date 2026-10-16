@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/memory/__init__.py                                       #
+# /blacs/plugins/memory/__init__.py                                 #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -20,7 +20,7 @@ from labscript_utils import memprof
 FILEPATH_COLUMN = 0
 name = "Memory Profile"
 module = "memory" # should be folder name
-logger = logging.getLogger('BLACS.plugin.%s'%module)
+logger = logging.getLogger(f'BLACS.plugin.{module}')
 
 class Plugin(BasePlugin):
     def plugin_setup_complete(self, BLACS):

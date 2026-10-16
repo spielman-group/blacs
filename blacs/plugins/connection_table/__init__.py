@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/connection_table/__init__.py                             #
+# /blacs/plugins/connection_table/__init__.py                       #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -28,7 +28,7 @@ from blacs.plugins import PLUGINS_DIR, PLUGIN_CONFIG_SECTION, BasePlugin
 FILEPATH_COLUMN = 0
 name = "Connection Table"
 module = "connection_table" # should be folder name
-logger = logging.getLogger('BLACS.plugin.%s'%module)
+logger = logging.getLogger(f'BLACS.plugin.{module}')
 
 class Plugin(BasePlugin):
     def __init__(self):
@@ -93,24 +93,22 @@ class Plugin(BasePlugin):
 
     def on_recompile_connection_table(self,*args,**kwargs):
         logger.info('recompile connection table called')
-        # get list of globals
         globals_files = self.BLACS['settings'].get_value(Setting,'globals_list')
         CompileAndRestart(self.BLACS, globals_files, self.BLACS['exp_config'].get('paths','connection_table_py'), self.BLACS['exp_config'].get('paths','connection_table_h5'),close_notification_func=self.notifications[RecompileNotification].on_restart)
 
 
-class BrokenDevicesNotification(object):
+class BrokenDevicesNotification:
     name = 'Device initialization failed'
     def __init__(self, BLACS):
-        # Create the widget
         self._ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'broken_device_notification.ui'))
 
     def get_widget(self):
         return self._ui
 
     def set_broken_devices(self, device_names):
-        self._ui.label.setText('''<html><head/><body><span style=" font-weight:600; color:#ff0000;">BLACS failed to initialize some of your devices.
+        self._ui.label.setText(f'''<html><head/><body><span style=" font-weight:600; color:#ff0000;">BLACS failed to initialize some of your devices.
             It is advised that you solve this problem before using BLACS.
-            The devices causing problems were: {}</span></body></html>'''.format(', '.join(device_names)))
+            The devices causing problems were: {", ".join(device_names)}</span></body></html>''')
 
     def get_properties(self):
         return {'can_hide':False, 'can_close':False}
@@ -127,14 +125,12 @@ class BrokenDevicesNotification(object):
     def close(self):
         pass
 
-class RecompileNotification(object):
+class RecompileNotification:
     name = name
     def __init__(self, BLACS):
-        # set up the file watching
         self.BLACS = BLACS
         self.filewatcher = None
         self.clean_modified_info = None
-        # Create the widget
         self._ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'notification.ui'))
         self._ui.button.clicked.connect(self.on_recompile_connection_table)
             
@@ -184,9 +180,7 @@ class RecompileNotification(object):
             polling_interval = 1
         logger.info('Using hashable_types: {}; polling_interval: {}'.format(hashable_types, polling_interval))
         
-        # append the list of globals
         file_list += self.BLACS['settings'].get_value(Setting,'globals_list')
-        # iterate over list, split folders off from files!
         calibration_list = self.BLACS['settings'].get_value(Setting,'calibrations_list')
         for path in calibration_list:
             if os.path.isdir(path):
@@ -194,14 +188,12 @@ class RecompileNotification(object):
             else:
                 file_list.append(path)
         
-        # stop watching if we already were
         if self.filewatcher is not None:
             self.filewatcher.stop()
             # Should only be calling this with modified_info not None once at startup:
             assert clean_modified_info is None
             clean_modified_info = self.filewatcher.get_clean_modified_info()
             
-        # Start the file watching!
         self.filewatcher = FileWatcher(
             self.callback,
             file_list,
@@ -220,36 +212,32 @@ class RecompileNotification(object):
             return {'clean_modified_info': self.filewatcher.get_clean_modified_info()}
 
     def on_restart(self):
-        # Connection table has been sucessfully recompiled, we are restarting. This is
-        # the only point, other than when they are first added for watching, that we
-        # replace the 'clean' modified info of the files with their current modified
-        # info. Since we just recompiled, the current state is the clean state
+        # The connection table was recompiled and we are restarting. This and the
+        # first watch are the only times the 'clean' modified info is replaced with
+        # the current modified info; the current state is now the clean state.
         self.filewatcher.stop()
         self.clean_modified_info = self.filewatcher.get_modified_info()
         self.filewatcher = None
-        # Hide the notification
         self._close()
 
     def close(self):
         if self.filewatcher is not None:
             self.filewatcher.stop()
     
-class Setting(object):
+class Setting:
     name = name
 
     def __init__(self,data):
-        # This is our data store!
         self.data = data
         
         self.stores_list = ['globals','calibrations']
         
         for store in self.stores_list:
-            if '%s_list'%store not in self.data:
-                self.data['%s_list'%store] = []
+            if f'{store}_list' not in self.data:
+                self.data[f'{store}_list'] = []
                 
-            #set the default sort order if it wasn't previousl saved
-            if '%s_sort_order'%store not in self.data:
-                self.data['%s_sort_order'%store] = 'ASC'
+            if f'{store}_sort_order' not in self.data:
+                self.data[f'{store}_sort_order'] = 'ASC'
 
     def normalize_globals_path(self, filepath):
         filepath = os.path.normpath(str(filepath))
@@ -257,11 +245,11 @@ class Setting(object):
             return default_toml_path(filepath)
         return filepath
         
-    # Create the page, return the page and an icon to use on the label (the class name attribute will be used for the label text)   
+    # Return the settings page and an icon for its label; the label text is the
+    # class's name attribute.
     def create_dialog(self,notebook):
         ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'connection_table.ui'))
         
-        # Create the models, get the views, and link them!!
         self.models = {}
         self.views = {}
         self.models['globals'] = QStandardItemModel()
@@ -274,30 +262,25 @@ class Setting(object):
         self.views['calibrations'] = ui.unit_conversion_treeview
         self.views['calibrations'].setModel(self.models['calibrations'])
         
-        # Setup the buttons
         ui.add_h5_file.clicked.connect(self.add_global_file)
         ui.delete_h5_file.clicked.connect(self.delete_selected_globals_file)
         ui.add_unitconversion_file.clicked.connect(self.add_calibration_file)
         ui.add_unitconversion_folder.clicked.connect(self.add_calibration_folder)
         ui.delete_unitconversion.clicked.connect(self.delete_selected_conversion_file)
         
-        # setup sort indicator changed signals
         self.views['globals'].header().sortIndicatorChanged.connect(self.global_sort_indicator_changed)
         self.views['calibrations'].header().sortIndicatorChanged.connect(self.calibrations_sort_indicator_changed)
         
-        #iterate over the two listores
         for store in self.stores_list:
-            # If we have saved data in the data store, then load it into the list store
-            if '%s_list'%store in self.data:
-                for path in self.data['%s_list'%store]:
+            if f'{store}_list' in self.data:
+                for path in self.data[f'{store}_list']:
                     if store == 'globals':
                         path = self.normalize_globals_path(path)
                     self.models[store].appendRow(QStandardItem(path))
-            # otherwise add an empty list to our data store, and leave the liststore empty
             else:
-                self.data['%s_list'%store] = []
+                self.data[f'{store}_list'] = []
             
-            self.views[store].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data['%s_sort_order'%store]))
+            self.views[store].sortByColumn(FILEPATH_COLUMN,self.order_to_enum(self.data[f'{store}_sort_order']))
         
         return ui,None
     
@@ -318,7 +301,7 @@ class Setting(object):
         self.data['calibrations_sort_order'] = self.enum_to_order(self.views['calibrations'].header().sortIndicatorOrder())
     
     def order_to_enum(self, order):
-        # if we are accidnetally passed an enum, just return it
+        # If we are accidentally passed an enum, just return it
         if order not in ['ASC', 'DESC']:
             return order
     
@@ -358,15 +341,13 @@ class Setting(object):
         return None
     
     def save(self):
-        # transfer the contents of the list store into the data store, and then return the data store
         for store in self.stores_list:
-            # clear the existing list
-            self.data['%s_list'%store] = []
+            self.data[f'{store}_list'] = []
             for row_index in range(self.models[store].rowCount()):
                 path = str(self.models[store].item(row_index).text())
                 if store == 'globals':
                     path = self.normalize_globals_path(path)
-                self.data['%s_list'%store].append(path)
+                self.data[f'{store}_list'].append(path)
         
         return self.data
         
@@ -380,12 +361,10 @@ class Setting(object):
         if selected_files is not None:
             for filepath in selected_files:
                 filepath = self.normalize_globals_path(filepath)
-                # Qt has this weird behaviour where if you type in the name of a file that exists
-                # but does not have the extension you have limited the dialog to, the OK button is greyed out
-                # but you can hit enter and the file will be selected. 
-                # So we must check the extension of each file here!
+                # Qt greys out OK for a typed name that does not match the dialog's
+                # extension filter, yet Enter still selects the file, so check the
+                # extension of each file here.
                 if filepath.endswith('.toml'):
-                    # make sure the path isn't already in the list
                     if not self.is_filepath_in_store(filepath, 'globals'):
                         self.models['globals'].appendRow(QStandardItem(filepath))
          
@@ -412,12 +391,10 @@ class Setting(object):
         if selected_files is not None:
             for filepath in selected_files:
                 filepath = os.path.normpath(filepath)
-                # Qt has this weird behaviour where if you type in the name of a file that exists
-                # but does not have the extension you have limited the dialog to, the OK button is greyed out
-                # but you can hit enter and the file will be selected. 
-                # So we must check the extension of each file here!
+                # Qt greys out OK for a typed name that does not match the dialog's
+                # extension filter, yet Enter still selects the file, so check the
+                # extension of each file here.
                 if filepath.endswith('.py') or filepath.endswith('.pyw'):
-                    # make sure the path isn't already in the list
                     if not self.is_filepath_in_store(filepath,'calibrations'):
                         self.models['calibrations'].appendRow(QStandardItem(filepath))
          
@@ -428,7 +405,6 @@ class Setting(object):
             None, "Select unit conversion folder", "C:\\"
         )
         if filepath is not None:
-            # make sure the path isn't already in the list
             if not self.is_filepath_in_store(filepath,'calibrations'):
                 self.models['calibrations'].appendRow(QStandardItem(filepath))
          

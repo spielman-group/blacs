@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/__init__.py                                              #
+# /blacs/plugins/__init__.py                                        #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -13,6 +13,8 @@
 import os
 import logging
 from labscript_utils.labconfig import LabConfig
+# Plugin modules import BasePlugin, callback, Callback and DEFAULT_PRIORITY
+# from here.
 from labscript_utils.plugins import (
     DEFAULT_PRIORITY,
     BasePlugin,

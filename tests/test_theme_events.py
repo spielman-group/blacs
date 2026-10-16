@@ -1,14 +1,10 @@
 """Theme change events reaching BLACS's main window.
 
-``BLACSWindow`` recolours its tab headers whenever Qt tells the window
-something about its own appearance has changed, which is how BLACS repaints
-itself when the OS switches between light and dark. The window gets that news
-in ``changeEvent``, a Qt virtual method, so an exception raised in it or in
-what it triggers does not propagate to the caller: PyQt hands it to
-``sys.excepthook`` instead and carries on. A test that only calls the slot
-directly, or only checks that nothing raised, would pass either way -- it has
-to deliver the event through Qt and watch the hook to tell a working handler
-from a broken one.
+``BLACSWindow`` recolours its tab headers when the OS switches between light
+and dark, which reaches it in ``changeEvent``, a Qt virtual method. An
+exception raised there or in what it triggers goes to ``sys.excepthook``
+instead of the caller, so a test has to deliver the event through Qt and watch
+the hook to tell a working handler from a broken one.
 """
 import sys
 import unittest
@@ -16,18 +12,18 @@ import unittest
 from qtutils.qt.QtCore import QEvent
 from qtutils.qt.QtWidgets import QApplication
 
-# fixtures does the guarded import of BLACS, once, for every test module.
+# fixtures imports BLACS, with its splash stubbed, for every test module.
 import fixtures
 import blacs.__main__
 
 
 def a_qapplication():
-    """One QApplication for the whole process, as Qt requires."""
+    """One QApplication for the whole process."""
     return QApplication.instance() or QApplication(['test'])
 
 
-class FakeBLACS(object):
-    """Stands in for the real BLACS app, recording what a theme change does with it."""
+class FakeBLACS:
+    """Records what a theme change does to BLACS."""
 
     def __init__(self):
         self.tab_icon_and_text_calls = []
@@ -44,12 +40,10 @@ class ThemeEventTests(unittest.TestCase):
         self.addCleanup(self.window.deleteLater)
 
     def send(self, event_type):
-        """Deliver a change event the way Qt does, and report what escaped.
+        """Deliver a change event the way Qt does, and return what escaped.
 
-        ``QApplication.sendEvent`` is what actually calls a virtual method
-        like ``changeEvent``, and it is also what diverts an exception raised
-        inside one to ``sys.excepthook`` rather than letting it raise here --
-        so the hook has to be watched, or a broken handler would look clean.
+        ``sendEvent`` diverts an exception raised in a virtual method to
+        ``sys.excepthook``, so the hook is watched here.
         """
         seen = []
         original = sys.excepthook

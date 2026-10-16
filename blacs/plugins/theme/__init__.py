@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/theme/__init__.py                                        #
+# /blacs/plugins/theme/__init__.py                                  #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -19,7 +19,7 @@ from blacs.plugins import PLUGINS_DIR, BasePlugin
 
 name = "GUI Theme"
 module = "theme" # should be folder name
-logger = logging.getLogger('BLACS.plugin.%s'%module)
+logger = logging.getLogger(f'BLACS.plugin.{module}')
 
 
 DEFAULT_STYLESHEET = """DigitalOutput {
@@ -123,8 +123,8 @@ class Plugin(BasePlugin):
         
     def update_stylesheet(self):
         if self.BLACS is not None:
-            # show centralwidget as a workaround to fix stylsheets
-            # not beeing applied under PyQt5 on first draw
+            # Show centralwidget as a workaround to fix stylesheets not being applied
+            # under PyQt5 on first draw.
             self.BLACS['ui'].centralwidget.show()
             stylesheet_settings = self.BLACS['settings'].get_value(Setting,"stylesheet")
             self.BLACS['ui'].centralwidget.setStyleSheet(self.unmodified_stylesheet + stylesheet_settings)
@@ -135,29 +135,26 @@ class Plugin(BasePlugin):
         self.update_stylesheet()
 
 
-class Setting(object):
+class Setting:
     name = name
 
     def __init__(self,data):
-        # This is our data store!
         self.data = data
         
         if 'stylesheet' not in self.data or not self.data['stylesheet']:
-            # If it's absent or an empty string, use the default stylesheet:
             self.data['stylesheet'] = DEFAULT_STYLESHEET
     
     def on_set_green_button_theme(self):
         self.widgets['stylesheet'].appendPlainText(DEFAULT_STYLESHEET)
         
-    # Create the page, return the page and an icon to use on the label (the class name attribute will be used for the label text)   
+    # Return the settings page and an icon for its label; the label text is the
+    # class's name attribute.
     def create_dialog(self,notebook):
         ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'theme.ui'))
         
-        # restore current stylesheet
         ui.stylesheet_text.setPlainText(self.data['stylesheet'])
         ui.example_button.clicked.connect(self.on_set_green_button_theme)
         
-        # save reference to widget
         self.widgets = {}
         self.widgets['stylesheet'] = ui.stylesheet_text
         self.widgets['example_button'] = ui.example_button
@@ -173,10 +170,8 @@ class Setting(object):
     def save(self):
         stylesheet = str(self.widgets['stylesheet'].toPlainText())
         if not stylesheet.endswith('\n'):
-            # This is a way to distinguish between an intentionally blank
-            # stylesheet, and an empty string, which used to be what was
-            # stored When the user had made no changes, which now we take to
-            # imply that they want to use the default stylesheet:
+            # The newline distinguishes an intentionally blank stylesheet from an
+            # empty string, which __init__ takes to mean the default stylesheet.
             stylesheet += '\n'
         self.data['stylesheet'] = stylesheet
         data = self.data.copy()

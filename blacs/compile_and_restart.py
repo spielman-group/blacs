@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /compile_and_restart.py                                           #
+# /blacs/compile_and_restart.py                                     #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -25,8 +25,8 @@ from blacs import BLACS_DIR
 
 class CompileAndRestart(QDialog):
     def __init__(self, blacs, globals_files,connection_table_labscript, output_path, close_notification_func=None):
-        QDialog.__init__(self,blacs['ui'])
-        self.setAttribute(Qt.WA_DeleteOnClose, True) # make sure the dialog is deleted when the window is closed
+        super().__init__(blacs['ui'])
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         
         self.globals_files = globals_files
         self.labscript_file = connection_table_labscript
@@ -39,7 +39,6 @@ class CompileAndRestart(QDialog):
         self.output_box = OutputBox(self.ui.verticalLayout)       
         self.ui.restart.setEnabled(False)
         
-        # Connect buttons
         self.ui.restart.clicked.connect(self.restart)
         self.ui.compile.clicked.connect(self.compile)
         self.ui.cancel.clicked.connect(self.reject)
@@ -74,9 +73,9 @@ class CompileAndRestart(QDialog):
             try:
                 shutil.move(self.tempfilename,self.output_path)
             except Exception as e:
-                msg = ('Couldn\'t replace existing connection table h5 file. ' + 
-                       'Is it open in another process? ' +
-                       'error was:\n %s\n') % str(e)
+                msg = ("Couldn't replace existing connection table h5 file. "
+                       'Is it open in another process? '
+                       f'error was:\n {e}\n')
                 self.output_box.output(msg, red=True)
                 self.ui.label.setText('Compilation failed.')
                 self.ui.restart.setEnabled(False)

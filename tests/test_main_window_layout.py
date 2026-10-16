@@ -1,8 +1,7 @@
 """How BLACS's main window divides its space.
 
 The shot controls are a fixed strip above the device tabs, taking the height
-they need; the device tabs get the rest. Asserted against the loaded window,
-since that is what an operator meets.
+they need; the device tabs get the rest. Asserted against the loaded window.
 """
 import os
 import unittest
@@ -21,8 +20,8 @@ _qapplication = None
 def load_main_window():
     global _qapplication
     if QApplication.instance() is None:
-        # Held for the life of the process: a QApplication that is garbage
-        # collected takes every widget built under it down with it.
+        # Held for the life of the process: a garbage-collected QApplication
+        # takes every widget built under it down.
         _qapplication = QApplication([])
     return UiLoader().load(MAIN_UI)
 
@@ -31,9 +30,8 @@ class MainWindowLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.ui = load_main_window()
-        # Shown, because Qt does not lay a window out until it is: without this
-        # every height below reads 0 and the size assertions pass or fail for
-        # reasons that have nothing to do with the layout.
+        # Shown, because Qt does not lay a window out until it is: unshown,
+        # every height below reads 0.
         cls.ui.show()
         QApplication.instance().processEvents()
 

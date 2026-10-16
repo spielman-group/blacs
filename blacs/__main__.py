@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# __main__.py                                                       #
+# /blacs/__main__.py                                                #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -10,8 +10,7 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-'''BLACS GUI and supporting code
-'''
+"""BLACS GUI and supporting code."""
 import labscript_utils.excepthook
 
 import ast
@@ -23,7 +22,6 @@ import desktop_app
 desktop_app.set_process_appid(DESKTOP_APP_MODULE)
 
 
-# Splash screen
 from labscript_utils.splash import Splash, get_qapplication
 splash = Splash(
     os.path.join(BLACS_DIR, 'blacs.svg'), application_name=APPLICATION_NAME
@@ -39,7 +37,7 @@ import importlib.metadata
 WINDOWS = platform.system() == 'Windows'
 
 # No splash update for Qt - the splash code has already imported it:
-from qtutils import inmain_later, inmain, inthread, UiLoader
+from qtutils import inmain_later, inthread, UiLoader
 import qtutils.icons  # import has side-effects we rely on
 from qtutils.qt.QtCore import QTimer, Qt, qVersion
 from qtutils.qt.QtGui import QIcon, QColor, QPalette
@@ -73,7 +71,6 @@ process_tree = ProcessTree.instance()
 process_tree.zlock_client.set_process_name(APPLICATION_NAME)
 
 
-# Setup logging
 logger = setup_logging(APPLICATION_NAME)
 labscript_utils.excepthook.set_logger(logger)
 
@@ -91,30 +88,20 @@ logger.info(f'zprocess version: {zprocess.__version__}')
 logger.info(f'labscript_utils version: {labscript_utils.__version__}')
 logger.info(f'BLACS version: {blacs.__version__}')
 
-# Connection Table Code
 from labscript_utils.connections import ConnectionTable
-#Draggable Tab Widget Code
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
 from labscript_utils.qtwidgets.application import LabscriptGuiApplication
-# Lab config code
 from labscript_utils.labconfig import LabConfig, get_default_appconfig_file
 from labscript_utils.plugins import MenuContext
 from labscript_profile import hostname
-# Shot execution code
 from blacs.shot_execution import ShotExecutor
-# Module containing hardware compatibility:
 from labscript_utils import device_registry
-# Save/restore frontpanel code
 from blacs.front_panel_settings import FrontPanelSettings
-# Notifications system
 from blacs.notifications import Notifications
-# Preferences system
 from labscript_utils.settings import Settings
 import blacs.plugins as plugins
-
-from blacs import BLACS_DIR
 
 
 class BLACSWindow(ThemedWindow, QMainWindow):
@@ -144,8 +131,8 @@ class BLACSWindow(ThemedWindow, QMainWindow):
             QTimer.singleShot(100,self.close)
 
     def on_theme_changed(self):
-        # tab header text colors have to be done explicitly by tab
-        # because they use setTabTextColor
+        # Tab header text is coloured per tab with setTabTextColor, so a theme
+        # change has to repaint it explicitly.
         app = QApplication.instance()
         self.blacs.update_all_tab_icon_and_text(
             app.palette().color(QPalette.ColorRole.Text)
@@ -195,11 +182,10 @@ class BLACS(LabscriptGuiApplication):
         self.settings_dict = {}
 
         splash.update_text('loading device front panel settings')
-        # Find which devices are connected to BLACS, and what their labscript class names are:
+        # Maps each connected device's name to its labscript class name.
         logger.info('finding connected devices in connection table')
         self.attached_devices = self.connection_table.get_attached_devices()
 
-        # Get settings to restore
         logger.info('Loading front panel settings')
         self.front_panel_settings = FrontPanelSettings(self.settings_path, self.connection_table)
         self.front_panel_settings.setup(self)
@@ -209,23 +195,20 @@ class BLACS(LabscriptGuiApplication):
         self.restore_window(tab_data)
 
         splash.update_text('creating device tabs...')
-        # Create the notebooks
         logger.info('Creating tab widgets')
         for i in range(4):
             self.tab_widgets[i] = DragDropTabWidget(self.tab_widget_ids)
             self.tab_widgets[i].setElideMode(Qt.ElideRight)
-            getattr(self.ui,'tab_container_%d'%i).addWidget(self.tab_widgets[i])
+            getattr(self.ui, f'tab_container_{i}').addWidget(self.tab_widgets[i])
 
         logger.info('Instantiating devices')
         self.failed_device_settings = {}
         for device_name, labscript_device_class_name in list(self.attached_devices.items()):
             try:
                 self.settings_dict.setdefault(device_name,{"device_name":device_name})
-                # add common keys to settings:
                 self.settings_dict[device_name]["connection_table"] = self.connection_table
                 self.settings_dict[device_name]["front_panel_settings"] = settings[device_name] if device_name in settings else {}
                 self.settings_dict[device_name]["saved_data"] = tab_data[device_name]['data'] if device_name in tab_data else {}
-                # Instantiate the device
                 logger.info('instantiating %s'%device_name)
                 TabClass = device_registry.get_BLACS_tab(labscript_device_class_name)
                 self.tablist[device_name] = TabClass(self.tab_widgets[0],self.settings_dict[device_name])
@@ -238,20 +221,18 @@ class BLACS(LabscriptGuiApplication):
 
         splash.update_text('instantiating plugins')
         logger.info('Instantiating plugins')
-        # setup the plugin system
         plugin_settings = eval(tab_data['BLACS settings']['plugin_data']) if 'plugin_data' in tab_data['BLACS settings'] else {}
         self.plugins = plugins.manager.instantiate_plugins()
         plugins.manager.restore_save_data(plugin_settings)
 
         logger.info('creating plugin tabs')
-        # setup the plugin tabs
         for module_name, plugin in self.plugins.items():
             try:
                 if hasattr(plugin, 'get_tab_classes'):
                     tab_dict = {}
 
                     for tab_name, TabClass in plugin.get_tab_classes().items():
-                        settings_key = "{}: {}".format(module_name, tab_name)
+                        settings_key = f"{module_name}: {tab_name}"
                         self.settings_dict.setdefault(settings_key, {"tab_name": tab_name})
                         self.settings_dict[settings_key]["front_panel_settings"] = (
                             settings[settings_key] if settings_key in settings else {}
@@ -279,7 +260,6 @@ class BLACS(LabscriptGuiApplication):
 
         splash.update_text("starting shot execution")
         logger.info('starting shot execution thread')
-        # Setup shot execution
         self.shot_executor = ShotExecutor(self,self.ui)
         self.shot_executor.restore_save_data(
             self._restore_shot_execution_data(tab_data['BLACS settings'])
@@ -315,15 +295,14 @@ class BLACS(LabscriptGuiApplication):
 
         plugins.manager.setup_complete(blacs_data)
 
-        # Connect menu actions
         self.ui.actionOpenPreferences.triggered.connect(self.on_open_preferences)
         self.ui.actionSave.triggered.connect(self.on_save_front_panel)
         self.ui.actionOpen.triggered.connect(self.on_load_front_panel)
         self.ui.actionExit.triggered.connect(self.ui.close)
 
-        # The server answers questions about this BLACS, so it starts once there
-        # is a BLACS to describe: one started earlier would spend BLACS's
-        # start-up telling a runmanager that this BLACS had failed.
+        # The server answers questions about this BLACS, so it starts once there is
+        # one to describe: earlier, it would tell a runmanager throughout start-up
+        # that this BLACS had failed.
         splash.update_text('starting experiment server')
         self.server = BlacsServer(self, int(self.exp_config.get('ports', 'blacs')))
 
@@ -344,7 +323,7 @@ class BLACS(LabscriptGuiApplication):
             logger.exception('Unable to restore the window geometry.')
 
     def order_tabs(self,tab_data):
-        # Move the tabs to the correct notebook
+        # Move each tab to its saved notebook.
         for tab_name in self.tablist.keys():
             notebook_num = 0
             if tab_name in tab_data:
@@ -352,7 +331,6 @@ class BLACS(LabscriptGuiApplication):
                 if notebook_num not in self.tab_widgets:
                     notebook_num = 0
 
-            #Find the notebook the tab is in, and remove it:
             for notebook in self.tab_widgets.values():
                 tab_index = notebook.indexOf(self.tablist[tab_name]._ui)
                 if tab_index != -1:
@@ -362,18 +340,16 @@ class BLACS(LabscriptGuiApplication):
                     break
 
         splash.update_text('restoring tab positions...')
-        # # Now that all the pages are created, reorder them!
+        # Reordering waits until every tab is in its notebook.
         for tab_name in self.tablist.keys():
             if tab_name in tab_data:
                 notebook_num = int(tab_data[tab_name]["notebook"])
                 if notebook_num in self.tab_widgets:
                     self.tab_widgets[notebook_num].tab_bar.moveTab(self.tab_widgets[notebook_num].indexOf(self.tablist[tab_name]._ui),int(tab_data[tab_name]["page"]))
 
-        # # Now that they are in the correct order, set the correct one visible
         for tab_name, data in tab_data.items():
             if tab_name == 'BLACS settings':
                 continue
-            # if the notebook still exists and we are on the entry that is visible
             if bool(data["visible"]) and int(data["notebook"]) in self.tab_widgets:
                 self.tab_widgets[int(data["notebook"])].tab_bar.setCurrentIndex(int(data["page"]))
 
@@ -384,11 +360,10 @@ class BLACS(LabscriptGuiApplication):
             tab.update_from_settings(self.settings_dict[tab_name])
 
     def update_all_tab_icon_and_text(self, text_colour):
-        # used to repaint tab header text after theme change
-
+        # Repaints tab header text after a theme change.
         for tab in self.tablist.values():
             if tab._tab_text_colour == QColor('red'):
-                # ensure error tabs keep their red text
+                # Error tabs keep their red text.
                 continue
             tab._tab_text_colour = text_colour
             tab.set_tab_icon_and_colour()
@@ -401,10 +376,8 @@ class BLACS(LabscriptGuiApplication):
             "HDF5 files (*.h5 *.hdf5)",
         )
         if filepath is not None:
-            # Qt has this weird behaviour where if you type in the name of a file that exists
-            # but does not have the extension you have limited the dialog to, the OK button is greyed out
-            # but you can hit enter and the file will be selected.
-            # So we must check the extension of each file here!
+            # Qt greys out OK for a typed name that lacks the filter's extension, but
+            # Enter still selects it, so the extension is checked here.
             if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
                 try:
                     if self.question_dialog("""Warning: This will modify front panel values and cause device output values to update.
@@ -414,35 +387,31 @@ class BLACS(LabscriptGuiApplication):
                         front_panel_settings = FrontPanelSettings(filepath, self.connection_table)
                         settings,question,error,tab_data = front_panel_settings.restore()
 
-                        # Restore window data
                         self.restore_window(tab_data)
                         self.order_tabs(tab_data)
                         self.update_all_tab_settings(settings,tab_data)
 
-                        # restore shot execution data
                         self.shot_executor.restore_save_data(
                             self._restore_shot_execution_data(tab_data['BLACS settings'])
                         )
                 except Exception as e:
                     logger.exception("Unable to load the front panel in %s."%(filepath))
-                    self.error_dialog("Unable to load the front panel. The error encountered is printed below.\n\n%s"%str(e), information=True)
+                    self.error_dialog(f"Unable to load the front panel. The error encountered is printed below.\n\n{e}", information=True)
             else:
                 self.error_dialog("You did not select a file ending with .h5 or .hdf5. Please try again", information=True)
                 QTimer.singleShot(10,self.on_load_front_panel)
 
     def on_save_exit(self):
-        # Save front panel
         data = self.front_panel_settings.get_save_data()
 
         if len(self.failed_device_settings) > 0:
-            message = ('Save data from broken tabs? \n Broken tabs are: \n {}'.format(list(self.failed_device_settings.keys())))
+            message = (f'Save data from broken tabs? \n Broken tabs are: \n {list(self.failed_device_settings.keys())}')
             if self.question_dialog(message):
                 data[0].update(self.failed_device_settings)
 
         self.front_panel_settings.save_front_panel_to_h5(self.settings_path,data[0],data[1],data[2],data[3],{"overwrite":True},force_new_conn_table=True)
         logger.info('Shutting down workers')
         for tab in self.tablist.values():
-            # Tell tab to shutdown its workers if it has a method to do so.
             if hasattr(tab, 'shutdown_workers'):
                 tab.shutdown_workers()
 
@@ -456,7 +425,6 @@ class BLACS(LabscriptGuiApplication):
         if pending_threads is None:
             pending_threads = {}
         overdue = time.time() > deadline
-        # Check for worker shutdown completion:
         for name, tab in list(self.tablist.items()):
             # Immediately close tabs that don't support finalise_close_tab()
             if not hasattr(tab, 'finalise_close_tab'):
@@ -472,16 +440,15 @@ class BLACS(LabscriptGuiApplication):
                 tab.shutdown_workers_complete = True
             if tab.shutdown_workers_complete:
                 if name not in pending_threads:
-                    # Either worker shutdown completed or we gave up. Close the tab.
+                    # Worker shutdown completed or was given up on.
                     try:
                         current_page = tab.close_tab(finalise=False)
                     except Exception as e:
                         logger.error('Couldn\'t close tab:\n%s' % str(e))
                         del self.tablist[name]
                     else:
-                        # Call finalise_close_tab in a thread since it can be blocking.
-                        # It has its own timeout however, so we do not need to keep
-                        # track of whether tabs are taking too long to finalise_close()
+                        # finalise_close_tab can block, so it runs in a thread; it has its
+                        # own timeout, so nothing here tracks how long it takes.
                         pending_threads[name] = inthread(
                             tab.finalise_close_tab, current_page
                         )
@@ -493,17 +460,13 @@ class BLACS(LabscriptGuiApplication):
         if not self.tablist and (
             overdue or not self.shot_executor.final_report_pending()
         ):
-            # All tabs are closed, and the shot executor has told runmanager
-            # how the shot it was holding turned out -- or named the run it
-            # could not deliver, or run out of time to. It makes that report on
-            # its way out of a daemon thread, so quitting has to wait for it;
-            # only for as long as the deadline, because a runmanager that is
-            # not answering must not be able to hold the quit open. Nothing to
-            # report is nothing to wait for, and the shot itself is not lost
-            # either way: it keeps its place in runmanager's queue.
+            # All tabs are closed. The shot executor reports its held outcome from a
+            # daemon thread on its way out, so the quit waits for it, but only until
+            # the deadline: a silent runmanager must not hold the quit open, and the
+            # shot keeps its place in runmanager's queue.
             if overdue and self.shot_executor.final_report_pending():
-                # The loop has not reached its own report, and the process ends
-                # here: name the run it was holding now.
+                # The loop has not reached its report and the process ends here, so
+                # name the held run now.
                 self.shot_executor.name_held_outcome()
             self.exit_complete = True
             logger.info('quitting')
@@ -537,16 +500,15 @@ class BlacsServer(ZMQServer):
     def handle_get_status(self):
         """Report what BLACS is doing, for a runmanager user who cannot see it.
 
-        Read-only, and deliberately the only command here: enabling requests,
-        clearing what stopped them, restarting a device and aborting a shot all
-        stay with the operator standing at this apparatus. Not decorated to run
-        on the GUI thread, so that a BLACS busy with a shot still answers."""
+        Read-only and the only command here: enabling requests, clearing what
+        stopped them, restarting a device and aborting a shot stay with the
+        operator at this apparatus. Not run on the GUI thread, so a BLACS busy
+        with a shot still answers."""
         return self.blacs.shot_executor.get_status_snapshot()
 
 
 if __name__ == '__main__':
     if 'tracelog' in sys.argv:
-        ##########
         import labscript_utils.tracelog
         labscript_utils.tracelog.log(os.path.join(BLACS_DIR, 'blacs_trace.log'),
                                      ['__main__','BLACS.tab_base_classes',
@@ -582,7 +544,6 @@ if __name__ == '__main__':
         exp_config, 'blacs', f'{hostname()}_BLACS.h5', ensure_directory=True
     )
 
-    # Create Connection Table object
     splash.update_text('loading connection table')
     logger.info('About to load connection table: %s'%exp_config.get('paths','connection_table_h5'))
     connection_table_h5_file = exp_config.get('paths','connection_table_h5')

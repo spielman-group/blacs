@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/delete_repeated_shots/__init__.py                        #
+# /blacs/plugins/delete_repeated_shots/__init__.py                  #
 #                                                                   #
 # Copyright 2017, JQI                                               #
 #                                                                   #
@@ -12,9 +12,7 @@
 #####################################################################
 import logging
 import os
-import subprocess
 import threading
-import sys
 from queue import Queue
 
 from qtutils import UiLoader
@@ -25,7 +23,7 @@ from blacs.plugins import PLUGINS_DIR, BasePlugin
 
 name = "Delete repeated shots"
 module = "delete_repeated_shots" # should be folder name
-logger = logging.getLogger('BLACS.plugin.%s'%module)
+logger = logging.getLogger(f'BLACS.plugin.{module}')
 
 
 KEEP_ALL_SHOTS = 0
@@ -45,14 +43,11 @@ class Plugin(BasePlugin):
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
 
-        # Add our controls to the BLACS UI:
         self.ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'controls.ui'))
         BLACS['ui'].shot_controls_frame.layout().addWidget(self.ui)
 
-        # Restore settings to the GUI controls:
         self.ui.spinBox.setValue(self.n_shots_to_keep)
 
-        # Connect signals:
         self.ui.spinBox.valueChanged.connect(self.on_spinbox_value_changed)
         self.ui.reset_button.clicked.connect(self.on_reset_button_clicked)
         self.ui.setEnabled(True)
@@ -60,14 +55,9 @@ class Plugin(BasePlugin):
     def on_spinbox_value_changed(self, value):
         with self.delete_queue_lock:
             self.n_shots_to_keep = value
-            # If the user reduces the number of shots to keep, but we had a
-            # larger list of shots awaiting deletion, remove shots from the
-            # deletion queue (without deleting them) until the queue is the
-            # same size as the number of shots we are now keeping. This means
-            # that if we set to keep 100 shots, and then we go ahead and run a
-            # hundred shots, if we then set it to keep 5 shots it won't delete
-            # the 95 oldest shots in the queue. Rather it will only delete the
-            # most recent 5 (and not immediately - over the next 5 shots).
+            # Lowering the limit drops the oldest queue entries without deleting
+            # their files, so shots kept under the old limit stay on disk; only
+            # the newest n_shots_to_keep will be deleted, over the next shots.
             while len(self.delete_queue) > self.n_shots_to_keep:
                 self.delete_queue.pop(0)
 
@@ -87,27 +77,24 @@ class Plugin(BasePlugin):
         
     def on_shot_complete(self, h5_filepath):
 
-        # If we're keeping all shots, then there's nothing to do here:
         if self.n_shots_to_keep == KEEP_ALL_SHOTS:
             return
 
-        # Is the file a repeated shot?
+        # A repeated shot is named <shot>_rep<number>.h5.
         basename, ext = os.path.splitext(os.path.basename(h5_filepath))
         if '_rep' in basename and ext == '.h5':
             repno = basename.split('_rep')[-1]
             try:
                 int(repno)
             except ValueError:
-                # not a rep:
                 return
             else:
-                # Yes, it is a rep. Queue it for deletion:
                 self.delete_queue.append(h5_filepath)
                 self.event_queue.put('shot complete')
 
     def mainloop(self):
-        # We delete shots in a separate thread so that we don't slow down the queue waiting on
-        # network communication to acquire the lock, 
+        # Shots are deleted in a separate thread so the queue does not wait on
+        # network communication to acquire the lock.
         while True:
             try:
                 event = self.event_queue.get()

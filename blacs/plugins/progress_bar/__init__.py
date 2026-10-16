@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/progress_bar/__init__.py                                 #
+# /blacs/plugins/progress_bar/__init__.py                           #
 #                                                                   #
 # Copyright 2018, Christopher Billington                            #
 #                                                                   #
@@ -12,9 +12,7 @@
 #####################################################################
 import logging
 import os
-import subprocess
 import threading
-import sys
 import time
 from queue import Queue, Empty
 
@@ -27,7 +25,6 @@ import labscript_utils.h5_lock
 import h5py
 
 import labscript_utils.properties as properties
-from labscript_utils.connections import ConnectionTable
 from labscript_utils import ensure_str
 from zprocess import TimeoutError
 from labscript_utils.ls_zprocess import Event
@@ -36,7 +33,7 @@ from blacs.plugins import PLUGINS_DIR, BasePlugin, callback
 
 name = "Progress Bar"
 module = "progress_bar" # should be folder name
-logger = logging.getLogger('BLACS.plugin.%s'%module)
+logger = logging.getLogger(f'BLACS.plugin.{module}')
 
 # The progress bar will update every UPDATE_INTERVAL seconds, or at the marker
 # times, whichever is soonest after the last update:
@@ -77,7 +74,6 @@ class Plugin(BasePlugin):
         self.bar.setStyle(self.style)
         self.bar.setMaximum(BAR_MAX)
         self.bar.setAlignment(QtCore.Qt.AlignCenter)
-        # Add our controls to the BLACS gui:
         BLACS['ui'].shot_status_verticalLayout.insertWidget(0, self.ui)
         # We need to know the name of the master pseudoclock so we can look up
         # the duration of each shot:
@@ -100,17 +96,14 @@ class Plugin(BasePlugin):
         return {'science_over': self.on_science_over,
                 'science_starting': self.on_science_starting}
         
-    # This callback should be run after any callbacks that might have significant time
-    # delays. For example it should run after the cycle_time science_starting callback.
-    # The priority should be set accordingly.
+    # Runs after any callbacks that might take significant time, such as the
+    # cycle_time science_starting callback.
     @callback(priority=200)
     def on_science_starting(self, h5_filepath):
-        # Tell the mainloop that we're starting a shot:
         self.command_queue.put(('start', h5_filepath))
 
     @callback(priority=5)
     def on_science_over(self, h5_filepath):
-        # Tell the mainloop we're done with this shot:
         self.command_queue.put(('stop', None))
 
     @inmain_decorator(True)
@@ -122,11 +115,8 @@ class Plugin(BasePlugin):
         self.ui.wait_warning.hide()
 
     def get_next_thing(self):
-        """Figure out what's going to happen next: a wait, a time marker, or a
-        regular update. Return a string saying which, and a float saying how
-        long from now it will occur. If the thing has already happened but not
-        been taken into account by our processing yet, then return zero for
-        the time."""
+        """Return what happens next ('update', 'wait' or 'marker') and how many
+        seconds from now, which is zero if it is already due."""
         if self.waits is not None and self.next_wait_index < len(self.waits):
             next_wait_time = self.waits['time'][self.next_wait_index]
         else:
@@ -148,10 +138,8 @@ class Plugin(BasePlugin):
 
     @inmain_decorator(True)
     def update_bar_style(self, marker=False, wait=False, previous=False):
-        """Update the bar's style to reflect the next marker or wait,
-        according to self.next_marker_index or self.next_wait_index. If
-        previous=True, instead update to reflect the current marker or
-        wait."""
+        """Style the bar for the next marker or wait; with previous=True, for the
+        current one."""
         assert not (marker and wait)
         # Ignore requests to reflect markers or waits if there are no markers
         # or waits in this shot:
@@ -163,7 +151,7 @@ class Plugin(BasePlugin):
                 marker_index -= 1
                 assert marker_index >= 0
             label, _, color = self.markers[marker_index]
-            self.bar_text_prefix = '[%s] ' % ensure_str(label)
+            self.bar_text_prefix = f'[{ensure_str(label)}] '
             r, g, b = color[0]
             if color.dtype == np.uint8 and (r, g, b) == (0, 0, 0):
                 # is old colour spec, in which (0,0,0) meant no colour specified.
@@ -185,7 +173,7 @@ class Plugin(BasePlugin):
                 wait_index -= 1
                 assert wait_index >= 0
             label = self.waits[wait_index]['label']
-            self.bar_text_prefix = '-%s- ' % ensure_str(label)
+            self.bar_text_prefix = f'-{ensure_str(label)}- '
             highlight_text_color = regular_text_color = QtGui.QColor(192, 0, 0)
             bar_color = QtCore.Qt.gray
         if marker or wait:
@@ -201,15 +189,13 @@ class Plugin(BasePlugin):
             self.bar.setPalette(palette)
         else:
             self.bar_text_prefix = None
-            # Default palette:
             self.bar.setPalette(self.style.standardPalette())
 
     @inmain_decorator(True)
     def update_bar_value(self, marker=False, wait=False):
-        """Update the progress bar with the current time elapsed. If marker or wait is
-        true, then use the exact time at which the next marker or wait is defined,
-        rather than the current time as returned by time.time()"""
-        thinspace = u'\u2009'
+        """Show the time elapsed; with marker or wait, the exact time of the next
+        marker or wait instead of the current time."""
+        thinspace = '\u2009'
         self.bar.setEnabled(True)
         assert not (marker and wait)
         if marker:
@@ -221,8 +207,8 @@ class Plugin(BasePlugin):
         value = int(round(labscript_time / self.stop_time * BAR_MAX))
         self.bar.setValue(value)
 
-        text = u'%.2f%ss / %.2f%ss (%%p%s%%)'
-        text = text % (labscript_time, thinspace, self.stop_time, thinspace, thinspace)
+        text = (f'{labscript_time:.2f}{thinspace}s / {self.stop_time:.2f}{thinspace}s '
+                f'(%p{thinspace}%)')
         if self.bar_text_prefix is not None:
             text = self.bar_text_prefix + text
         self.bar.setFormat(text)
@@ -230,7 +216,6 @@ class Plugin(BasePlugin):
     def _start(self, h5_filepath):
         """Called from the mainloop when starting a shot"""
         self.h5_filepath = h5_filepath
-        # Get the stop time, any waits and any markers from the shot:
         with h5py.File(h5_filepath, 'r') as f:
             props = properties.get(f, self.master_pseudoclock, 'device_properties')
             self.stop_time = props['stop_time']
@@ -267,9 +252,6 @@ class Plugin(BasePlugin):
         while True:
             try:
                 if running:
-                    # How long until the next thing of interest occurs, and
-                    # what is it? It can be either a wait, a marker, or a
-                    # regular update.
                     next_thing, timeout = self.get_next_thing()
                     try:
                         command, _ = self.command_queue.get(timeout=timeout)
@@ -294,12 +276,10 @@ class Plugin(BasePlugin):
                                     # we can check if the queue is empty in between:
                                     self.wait_completed.wait(self.h5_filepath, timeout=0.1)
                                 except TimeoutError:
-                                    # Only wait for wait completed events if the wait
-                                    # monitor device supports them. Otherwise, skip
-                                    # after this first timeout, and it will just look
-                                    # like the wait had 0.1 sec duration.
+                                    # Only wait for wait completed events if the wait monitor
+                                    # device supports them; otherwise skip after this first
+                                    # timeout, so the wait looks 0.1 sec long.
                                     if self.wait_completed_events_supported:
-                                        # The wait is still in progress:
                                         continue
                                 # The wait completed (or completion events are not
                                 # supported):

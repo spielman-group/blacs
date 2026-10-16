@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /hardware_interfaces/output_classes.py                            #
+# /blacs/output_classes.py                                          #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -12,7 +12,6 @@
 #####################################################################
 import logging
 import math
-import sys
 
 from qtutils.qt.QtCore import Qt
 from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
@@ -33,7 +32,7 @@ from labscript_utils.qtwidgets.enumoutput import EnumOutput
 from labscript_utils.unitconversions import get_unit_conversion_class
 
 
-class AO(object):
+class AO:
     def __init__(self, hardware_name, connection_name, device_name, program_function, settings, 
                  calib_class, calib_params, default_units, min, max, step, decimals):
         self._connection_name = connection_name
@@ -54,9 +53,8 @@ class AO(object):
         self._limits = [min,max]
         self._decimals = decimals
                 
-        self._logger = logging.getLogger('BLACS.%s.%s'%(self._device_name,hardware_name)) 
+        self._logger = logging.getLogger(f'BLACS.{self._device_name}.{hardware_name}')
         
-        # Initialise Calibrations
         self._comboboxmodel.appendRow(QStandardItem(self._base_unit))
         if calib_class is not None:
             try:
@@ -68,7 +66,6 @@ class AO(object):
             except (ImportError, AttributeError, KeyError):
                 cls = None
             if cls is None or not isinstance(calib_params, dict) or cls.base_unit != default_units:
-                # log an error:  
                 reason = ''
                 if cls is None:
                     reason = f'The unit conversion class {calib_class} could not be imported. Ensure it is available on the computer running BLACS.'
@@ -81,7 +78,6 @@ class AO(object):
                 self._calibration = None
             else:
                 try:
-                    # initialise calibration class
                     self._calibration = cls(calib_params)  
                     self._logger.debug('unit conversion class instantiated')                    
                     for unit in self._calibration.derived_units:
@@ -93,21 +89,18 @@ class AO(object):
                     self._logger.exception('Error while trying to instantiate unit conversion class')
                     self._calibration = None
         else:
-            # use default units
             self._calibration = None
             self._logger.debug('No unit conversion class specified')
         
         self._update_from_settings(settings,program=False)
     
     def _update_from_settings(self,settings,program=True):
-        # Build up the settings dictionary if it isn't already
         if not isinstance(settings,dict):
             settings = {}
         if 'front_panel_settings' not in settings or not isinstance(settings['front_panel_settings'],dict):
             settings['front_panel_settings'] = {}
         if self._hardware_name not in settings['front_panel_settings'] or not isinstance(settings['front_panel_settings'][self._hardware_name],dict):
             settings['front_panel_settings'][self._hardware_name] = {}
-        # Set default values if they are not already saved in the settings dictionary
         if 'base_value' not in settings['front_panel_settings'][self._hardware_name]:
             settings['front_panel_settings'][self._hardware_name]['base_value'] = False
         if 'locked' not in settings['front_panel_settings'][self._hardware_name]:
@@ -120,19 +113,14 @@ class AO(object):
             settings['front_panel_settings'][self._hardware_name]['name'] = self._connection_name
         
     
-        # only keep a reference to the part of the settings dictionary relevant to this DO
         self._settings = settings['front_panel_settings'][self._hardware_name]
     
-        # Update the state of the button
         self.set_value(self._settings['base_value'],program=program)
 
-        # Update the lock state
         self._update_lock(self._settings['locked'])
         
-        # Update the step size
         self.set_step_size(self._settings['base_step_size'],self._base_unit)
     
-        # Update the unit selection
         if self._calibration and self._settings['current_units'] in self._calibration.derived_units:
             self.change_unit(self._settings['current_units'],program=program)
         else:
@@ -143,7 +131,7 @@ class AO(object):
             if self._calibration and unit in self._calibration.derived_units:
                 return getattr(self._calibration,unit+"_to_base")(value)
              
-            raise RuntimeError('The value %s (%s) could not be converted to base units because the hardware channel %s, named %s, either does not have a unit conversion class or the unit specified was invalid'%(str(value),unit,self._hardware_name,self._connection_name))
+            raise RuntimeError(f'The value {value} ({unit}) could not be converted to base units because the hardware channel {self._hardware_name}, named {self._connection_name}, either does not have a unit conversion class or the unit specified was invalid')
         else:
             return value
             
@@ -152,21 +140,16 @@ class AO(object):
             if self._calibration and unit in self._calibration.derived_units:
                 return getattr(self._calibration,unit+"_from_base")(value)
         
-            raise RuntimeError('The value %s (%s) could not be converted to base units because the hardware channel %s, named %s, either does not have a unit conversion class or the unit specified was invalid'%(str(value),unit,self._hardware_name,self._connection_name))
+            raise RuntimeError(f'The value {value} ({unit}) could not be converted to base units because the hardware channel {self._hardware_name}, named {self._connection_name}, either does not have a unit conversion class or the unit specified was invalid')
         else:
             return value
             
-    # handles the conversion of a range centered on value in units to base units
-    # In other words, how big is "range" in base units assuming that you care about what range is
-    # between value-range/2 and value+range/2
-    #
-    # If value+range/2 or value-range/2 is outside of the limits, then we will shift the fraction of range
-    # used on the offending side of value
-    # If range is greater than the difference of the limits, we will return the difference between the limits
+    # Convert a range centered on value (both in unit) to base units: the span in
+    # base units of value-range/2 to value+range/2, with the range shifted to one
+    # side where it would pass a limit, and capped at the span of the limits.
     def convert_range_to_base(self,value,range,unit):
         self._logger.debug('convert_range_to_base called. value: %f, range: %f, unit: %s'%(value,range,unit))
         
-        # Do we need to convert the limits?
         if unit != self._base_unit:
             limits = [self.convert_value_from_base(self._limits[0],unit),self.convert_value_from_base(self._limits[1],unit)]
             if limits[0] > limits[1]:
@@ -176,11 +159,8 @@ class AO(object):
         
         self._logger.debug('limits in unit: %s), limits=[%f,%f]'%(unit,limits[0],limits[1]))
         
-        # limits are now in the units given to the function!
-        # (As are range and value)
+        # limits, range and value are now all in the given unit.
             
-        # If range is bigger than the difference of the limits, return the difference of the limits
-        # in base units
         if range >= abs(limits[0]-limits[1]):
             limits = [self.convert_value_to_base(limits[0],unit),self.convert_value_to_base(limits[1],unit)]            
             self._logger.debug('range bigger than range of limits, returning difference of limits') 
@@ -192,35 +172,28 @@ class AO(object):
         negative_fraction = range/2.0
         self._logger.debug('fractions are.... positive_fraction: %f, negative_fraction: %f'%(positive_fraction, negative_fraction))
         
-        # If the value+range/2 is greater than the upper limit, shift the fraction 
         if value+positive_fraction > limits[1]:           
             positive_fraction = abs(limits[1]-value)
             negative_fraction = abs(range-positive_fraction) 
             self._logger.debug('outside upper limit. positive_fraction: %f, negative_fraction: %f'%(positive_fraction, negative_fraction))
-        # Similarly if value-range/2 is less than the lower limit, shift the fraction
         elif value-negative_fraction < limits[0]:    
             negative_fraction = abs(limits[0]-value)        
             positive_fraction = abs(range-negative_fraction)
             self._logger.debug('outside lower limit. positive_fraction: %f, negative_fraction: %f'%(positive_fraction, negative_fraction))
         
         self._logger.debug('converting values to base units')            
-        # Now do the conversion!
         bound1 = self.convert_value_to_base(value+positive_fraction,unit)
         bound2 = self.convert_value_to_base(value-negative_fraction,unit)
         self._logger.debug('range in base units is: %f'%(abs(bound1-bound2)))
         
         return abs(bound1-bound2)
     
-    # This does the reverse of teh above function, with the same rules
+    # The reverse of convert_range_to_base, with the same rules.
     def convert_range_from_base(self,value,range,unit):
-        # limits are always in base units
         limits = self._limits
         
-        # limits are now in base units!
-        # (As are range and value)
+        # limits, range and value are all in base units.
             
-        # If range is bigger than the difference of the limits, return the difference of the limits
-        # in the specified units units
         if range >= abs(limits[0]-limits[1]):
             limits = [self.convert_value_from_base(limits[0],unit),self.convert_value_from_base(limits[1],unit)]
             return abs(limits[0]-limits[1])
@@ -229,16 +202,13 @@ class AO(object):
         # we can be certain shifting the fractions will not cause us to go out of bounds on the other side
         positive_fraction = range/2.0
         negative_fraction = range/2.0
-        # If the value+range/2 is greater than the upper limit, shift the fraction 
         if value+positive_fraction > limits[1]:
             positive_fraction = abs(limits[1]-value)
             negative_fraction = abs(range-positive_fraction)
-        # Similarly if value-range/2 is less than the lower limit, shift the fraction
         elif value-negative_fraction < limits[0]:    
             negative_fraction = abs(limits[0]-value)        
             positive_fraction = abs(range-negative_fraction)
         
-        # Now do the conversion!
         bound1 = self.convert_value_from_base(value+positive_fraction,unit)
         bound2 = self.convert_value_from_base(value-negative_fraction,unit)
         
@@ -255,21 +225,16 @@ class AO(object):
             
         self._widgets.append(widget)
     
-        # make sure the widget knows about this AO. 
         widget.set_AO(self,notify_old_AO=True,notify_new_AO=False)
         
-        # Now connect this widgets signal to the AO slot
         widget.connect_value_change(self.set_value)
         
-        # set the properties of the widgets...
-        # set comboboxmodel
         widget.block_combobox_signals()
         widget.set_combobox_model(self._comboboxmodel)
         widget.unblock_combobox_signals()
-        # This will set the min/max/value/num.decimals/stepsie and current_unit of ALL widgets
-        # including the one just added!
+        # These set the limits, value, decimals, step size, unit and lock state of
+        # all widgets, including the one just added.
         self.change_unit(self._current_units,program=False) # don't need to program though!
-        # This will update the lock state of ALL widgets, including the one just added!
         self._update_lock(self._locked)
         
         return True
@@ -285,7 +250,6 @@ class AO(object):
         if call_set_AO:
             widget.set_AO(new_AO,True,True)
             
-        # Further cleanup
         widget.disconnect_value_change()
         widget.set_combobox_model(QStandardItemModel())
         
@@ -298,13 +262,10 @@ class AO(object):
         self._logger.debug('Values in base units are: value: %f, lower_limit: %f, upper_limit: %f'%(property_value_list[0],property_value_list[1],property_value_list[2]))
         self._logger.debug('ranges in base units are: step_size: %f'%(property_range_list[0]))
         
-        # Now convert to the new unit
         if unit != self._base_unit:
             for index,param in enumerate(property_value_list):
-                #convert each to base units
                 property_value_list[index] = self.convert_value_from_base(param,unit)
             for index,param in enumerate(property_range_list):
-                #convert each to base units
                 property_range_list[index] = self.convert_range_from_base(self._current_value,param,unit)
             
             self._logger.debug('Values in new unit are: value: %f, lower_limit: %f, upper_limit: %f'%(property_value_list[0],property_value_list[1],property_value_list[2]))
@@ -329,34 +290,24 @@ class AO(object):
         else:
             num_decimals = self._decimals
         
-        # Store the current units
         self._current_units = unit  
         self._settings['current_units'] = unit    
         
-        # Check to see if the upper/lower bound has switched
+        # A unit conversion can swap the lower and upper bounds.
         if property_value_list[1] > property_value_list[2]:
             property_value_list[1], property_value_list[2] = property_value_list[2], property_value_list[1]
         
-        # Now update all the widgets
         for widget in self._widgets:
-            # Update the combo box
             widget.block_combobox_signals()
             widget.set_selected_unit(unit)
             widget.unblock_combobox_signals()
             
-            # block the spinbox from emitting a signal
             widget.block_spinbox_signals()
-            # Update the limits
             widget.set_limits(property_value_list[1],property_value_list[2])
-            # Update the step size
             widget.set_step_size(property_range_list[0])
-            # Update the decimals
             widget.set_num_decimals(num_decimals)
-            # Update the value - This should be the last thing you do, 
-            #                    otherwise it might get truncated or 
-            #                    limited in a bad way
+            # Set the value last, or it might be truncated or limited badly.
             widget.set_spinbox_value(property_value_list[0],unit)
-            # unblock the spinbox signals
             widget.unblock_spinbox_signals()
       
     @property
@@ -372,7 +323,6 @@ class AO(object):
         else:
             self._current_value = value
         
-        # Update the saved value in the settings dictionary
         self._settings['base_value'] = self._current_value
             
         if program:
@@ -380,17 +330,13 @@ class AO(object):
             self._program_device()
             
         for widget in self._widgets:
-            # block signals
             widget.block_spinbox_signals()
-            # update widget
             widget.set_spinbox_value(value,unit if unit is not None else self._base_unit)
-            # unblock signals            
             widget.unblock_spinbox_signals()
     
     def set_step_size(self,step_size,unit):
         self._logger.debug('set_step_size called. step_size: %f, unit: %s'%(step_size,unit))
         if unit != self._base_unit:
-            # convert and store!
             value = self.convert_value_from_base(self._current_value,unit)
             self._step_size = self.convert_range_to_base(value,step_size,unit)
         else:
@@ -404,17 +350,14 @@ class AO(object):
         
         self._settings['base_step_size'] = self._step_size
         
-        # now convert to current units
         self._current_step_size = self.get_step_size(self._current_units)        
         self._logger.debug('step_size in current units (%s): %f'%(self._current_units,self._current_step_size))
     
-        # Update the step size for all widgets
         for widget in self._widgets:
             widget.set_step_size(self._current_step_size)
     
     def get_step_size(self,unit):
         if unit != self._base_unit:
-            # we should convert it
             return self.convert_range_from_base(self._current_value,self._step_size,unit)
         else:
             return self._step_size
@@ -429,7 +372,6 @@ class AO(object):
         self._locked = locked        
         self._settings['locked'] = locked
         
-        # Lock all widgets if they are not already locked
         for widget in self._widgets:
             if locked:
                 widget.lock(False)
@@ -440,33 +382,30 @@ class AO(object):
     def name(self):
         return self._hardware_name + ' - ' + self._connection_name
             
-class DO(object):
+class DO:
     def __init__(self, hardware_name, connection_name, device_name, program_function, settings):
         self._hardware_name = hardware_name
         self._connection_name = connection_name
         self._widget_list = []
         
         self._device_name = device_name
-        self._logger = logging.getLogger('BLACS.%s.%s'%(self._device_name,hardware_name))
+        self._logger = logging.getLogger(f'BLACS.{self._device_name}.{hardware_name}')
 
-        # Note that while we could store self._current_state and self._locked in the
-        # settings dictionary, this dictionary is available to other parts of BLACS
-        # and using separate variables avoids those parts from being able to directly
-        # influence behaviour (the worst they can do is change the value used on initialisation)
+        # _current_state and _locked stay out of the settings dictionary, which other
+        # parts of BLACS can reach, so the worst they can do is change the value
+        # used on initialisation.
         self._locked = False
         self._current_state = False
         self._program_device = program_function
         self._update_from_settings(settings)
     
     def _update_from_settings(self,settings):
-        # Build up the settings dictionary if it isn't already
         if not isinstance(settings,dict):
             settings = {}
         if 'front_panel_settings' not in settings or not isinstance(settings['front_panel_settings'],dict):
             settings['front_panel_settings'] = {}
         if self._hardware_name not in settings['front_panel_settings'] or not isinstance(settings['front_panel_settings'][self._hardware_name],dict):
             settings['front_panel_settings'][self._hardware_name] = {}
-        # Set default values if they are not already saved in the settings dictionary
         if 'base_value' not in settings['front_panel_settings'][self._hardware_name]:
             settings['front_panel_settings'][self._hardware_name]['base_value'] = False
         if 'locked' not in settings['front_panel_settings'][self._hardware_name]:
@@ -475,13 +414,10 @@ class DO(object):
             settings['front_panel_settings'][self._hardware_name]['name'] = self._connection_name
         
     
-        # only keep a reference to the part of the settings dictionary relevant to this DO
         self._settings = settings['front_panel_settings'][self._hardware_name]
     
-        # Update the state of the button
         self.set_value(self._settings['base_value'],program=False)
 
-        # Update the lock state
         self._update_lock(self._settings['locked'])
 
     def create_widget(self, *args, **kwargs):
@@ -537,7 +473,7 @@ class DO(object):
         # either a string '1' or '0', True or False or 1 or 0
         state = bool(int(state))
 
-        # We are programatically setting the state, so break the check lock function logic
+        # We are programmatically setting the state, so break the check lock function logic
         self._current_state = state
         
         # update the settings dictionary if it exists, to maintain continuity on tab restarts
@@ -558,14 +494,14 @@ class DO(object):
         return self._hardware_name + ' - ' + self._connection_name
    
 
-class Image(object):
+class Image:
     def __init__(self, hardware_name, connection_name, device_name, program_function, settings, width, height, x = None, y = None):
         self._hardware_name = hardware_name
         self._connection_name = connection_name
         self._widget_list = []
         
         if x is not None and y is not None:
-            self.location = 'Location: (%d, %d) '%(x,y)
+            self.location = f'Location: ({x}, {y}) '
         else:
             self.location = ""
         
@@ -574,26 +510,23 @@ class Image(object):
         
         
         self._device_name = device_name
-        self._logger = logging.getLogger('BLACS.%s.%s'%(self._device_name,hardware_name)) 
+        self._logger = logging.getLogger(f'BLACS.{self._device_name}.{hardware_name}')
                 
-        # Note that while we could store self._current_state and self._locked in the
-        # settings dictionary, this dictionary is available to other parts of BLACS
-        # and using separate variables avoids those parts from being able to directly
-        # influence behaviour (the worst they can do is change the value used on initialisation)
+        # _current_value and _locked stay out of the settings dictionary, which other
+        # parts of BLACS can reach, so the worst they can do is change the value
+        # used on initialisation.
         self._locked = False
         self._current_value = ""
         self._program_device = program_function
         self._update_from_settings(settings)
         
     def _update_from_settings(self, settings):
-        # Build up the settings dictionary if it isn't already
         if not isinstance(settings,dict):
             settings = {}
         if 'front_panel_settings' not in settings or not isinstance(settings['front_panel_settings'],dict):
             settings['front_panel_settings'] = {}
         if self._hardware_name not in settings['front_panel_settings'] or not isinstance(settings['front_panel_settings'][self._hardware_name],dict):
             settings['front_panel_settings'][self._hardware_name] = {}
-        # Set default values if they are not already saved in the settings dictionary
         if 'base_value' not in settings['front_panel_settings'][self._hardware_name]:
             settings['front_panel_settings'][self._hardware_name]['base_value'] = ""
         if 'locked' not in settings['front_panel_settings'][self._hardware_name]:
@@ -602,17 +535,14 @@ class Image(object):
             settings['front_panel_settings'][self._hardware_name]['name'] = self._connection_name
         
     
-        # only keep a reference to the part of the settings dictionary relevant to this DO
         self._settings = settings['front_panel_settings'][self._hardware_name]
     
-        # Update the state of the button
         self.set_value(self._settings['base_value'],program=False)
 
-        # Update the lock state
         self._update_lock(self._settings['locked'])
         
     def create_widget(self, *args, **kwargs):
-        widget = ImageOutput('%s (%s)\n%sDimensions(%d, %d)'%(self._hardware_name,self._connection_name, self.location, self.width, self.height),self.width, self.height, *args,**kwargs)
+        widget = ImageOutput(f'{self._hardware_name} ({self._connection_name})\n{self.location}Dimensions({self.width}, {self.height})',self.width, self.height, *args,**kwargs)
         self.add_widget(widget)
         return widget
         
@@ -656,7 +586,7 @@ class Image(object):
     def set_value(self, value, program = True):
         value = str(value)  
         
-        # We are programatically setting the value, so break the check lock function logic
+        # We are programmatically setting the value, so break the check lock function logic
         self._current_value = value
         
         # update the settings dictionary if it exists, to maintain continuity on tab restarts
@@ -676,7 +606,7 @@ class Image(object):
     def name(self):
         return self._hardware_name + ' - ' + self._connection_name
    
-class DDS(object):
+class DDS:
     def __init__(self, hardware_name, connection_name, output_list):
         self._hardware_name = hardware_name
         self._connection_name = connection_name
@@ -698,7 +628,7 @@ class DDS(object):
         if widget in self._widget_list:
             return False
             
-        # Check that the widget has a method for getting/showin/hiding subwidgets        
+        # Check that the widget has a method for getting/showing/hiding subwidgets
         for subchnl in self._sub_channel_list:
             widget.get_sub_widget(subchnl)
             widget.hide_sub_widget(subchnl)
@@ -754,7 +684,7 @@ class DDS(object):
     def name(self):
         return self._hardware_name + ' - ' + self._connection_name
 
-class EO(object):
+class EO:
     """Enumeration Output object for control of outputs that only allow discrete values."""
 
     def __init__(self, hardware_name, connection_name, device_name, program_function, 
@@ -765,12 +695,10 @@ class EO(object):
         self._return_index = return_index
 
         self._device_name = device_name
-        self._logger = logging.getLogger('BLACS.%s.%s'%(self._device_name, hardware_name))
+        self._logger = logging.getLogger(f'BLACS.{self._device_name}.{hardware_name}')
 
-        # populate combobox model from options
         self._comboboxmodel = QStandardItemModel()
         if isinstance(options, list) or isinstance(options, tuple):
-            # use input order to populate model for list or tuple
             for i,key in enumerate(options):
                 item = QStandardItem(str(key))
                 item.setData(i, Qt.UserRole)
@@ -792,12 +720,10 @@ class EO(object):
             msg = """'options' is not a list, tuple, or dictionary"""
             self._logger.error(msg)
 
-        # Note that while we could store self._current_value and self._locked in the
-        # settings dictionary, this dictionary is available to other parts of BLACS
-        # and using separate variables avoids those parts from being able to directly
-        # influence behaviour (the worst they can do is change the value used on initialisation)
+        # _current_value and _locked stay out of the settings dictionary, which other
+        # parts of BLACS can reach, so the worst they can do is change the value
+        # used on initialisation.
         self._locked = False
-        # populate self._current_value and self._current_index from default value
         default_item = self._comboboxmodel.item(0,0)
         if default_item:
             self._current_value = default_item.text()
@@ -811,14 +737,12 @@ class EO(object):
         self._update_from_settings(settings)
 
     def _update_from_settings(self,settings, program=True):
-        # Build up settings dictionary if it doesn't exist
         if not isinstance(settings,dict):
             settings = {}
         if 'front_panel_settings' not in settings or not isinstance(settings['front_panel_settings'],dict):
             settings['front_panel_settings'] = {}
         if self._hardware_name not in settings['front_panel_settings'] or not isinstance(settings['front_panel_settings'][self._hardware_name],dict):
             settings['front_panel_settings'][self._hardware_name] = {}
-        # Set default values if they are not already saved in the settings dictionary
         if 'base_value' not in settings['front_panel_settings'][self._hardware_name]:
             settings['front_panel_settings'][self._hardware_name]['base_value'] = self._current_index
         if 'locked' not in settings['front_panel_settings'][self._hardware_name]:
@@ -826,13 +750,10 @@ class EO(object):
         if 'name' not in settings['front_panel_settings'][self._hardware_name]:
             settings['front_panel_settings'][self._hardware_name]['name'] = self._connection_name
 
-        # only keep a reference to the part of the settings dictionary relevant to this EO
         self._settings = settings['front_panel_settings'][self._hardware_name]
     
-        # Update the state
         self.set_value(int(self._settings['base_value']), program=program)
 
-        # Update the lock state
         self._update_lock(self._settings['locked'])
 
     def create_widget(self, display_name=None, horizontal_alignment=False, parent=None):
@@ -847,24 +768,20 @@ class EO(object):
 
         self._widget_list.append(widget)
 
-        # make sure the widget knows about this EO
         widget.set_EO(self, True, False)
-        # use options from the EO to set the combobox
         widget.set_combobox_model(self._comboboxmodel)
 
-        # Connect widget signal to EO slot
         widget.connect_value_change(self.set_value)
         self.set_value(self._current_value, False)
-        # Update lock state of widgets
         self._update_lock(self._locked)
 
         return True
 
     def remove_widget(self, widget):
         if widget not in self._widget_list:
-            msg = '''Widget cannot be removed because it is not registered 
-                    with the EO object %s'''
-            raise RuntimeError(msg % (self._hardware_name))
+            msg = f'''Widget cannot be removed because it is not registered 
+                    with the EO object {self._hardware_name}'''
+            raise RuntimeError(msg)
 
         widget.disconnect_value_change()
         widget.set_combobox_model(QStandardItemModel())
@@ -923,7 +840,6 @@ class EO(object):
     def update_by_index(self,index):
         self._current_index = index
         self._settings['base_value'] = index
-        # find option corresponding to index
         indices = self._comboboxmodel.match(self._comboboxmodel.index(0,0), Qt.UserRole, index, 1,
                                              Qt.MatchExactly|Qt.MatchWrap)
         if indices:
@@ -953,7 +869,6 @@ if __name__ == '__main__':
     toolpalette3 = tpg.append_new_palette('Enum Outputs')
     layout.addItem(QSpacerItem(0,0,QSizePolicy.Minimum,QSizePolicy.MinimumExpanding))
     
-    # create settings dictionary
     settings = {'front_panel_settings':{
                     'do0':{
                         'base_value':False,
@@ -975,11 +890,9 @@ if __name__ == '__main__':
     def print_something():
         print('program_function called')
 
-    # Create a DO object
     my_DO = DO(hardware_name='do0', connection_name='my first digital output', device_name='device', 
                 program_function=print_something, settings=settings)
     
-    # Link in two DO widgets
     button1 = DigitalOutput('do0\nmy first digital output')
     button2 = DigitalOutput('a linked do0')
     toolpalette.addWidget(button1)
@@ -987,13 +900,11 @@ if __name__ == '__main__':
     my_DO.add_widget(button1)
     my_DO.add_widget(button2)
     
-    # Create an AO object
     my_AO = AO(hardware_name = 'ao0', connection_name='my ao', device_name='ni_blah',
                 program_function=print_something, settings=settings, 
                 calib_class=None, calib_params=None, default_units='V', 
                 min=-10.0, max=10.0, step=0.01, decimals=3)
     
-    # link in two AO widgets
     analog1 = AnalogOutput('AO1')
     analog2 = AnalogOutput('AO1 copy',display_name='Linked AO1 Widget')
     my_AO.add_widget(analog1)
@@ -1002,21 +913,18 @@ if __name__ == '__main__':
     toolpalette2.addWidget(analog2)
     
 
-    # Create EO object
     test_options = ['option 1','option 2']
     my_EO = EO(hardware_name='eo0', connection_name='my eo', device_name='device',
                 program_function=print_something, settings=settings, options=test_options)
 
     enum1 = EnumOutput('Enumerate',display_name='Test Enumerable',
                         horizontal_alignment=True)
-    # linked enum with different layout
     enum2 = EnumOutput('Linked Enumerate')
     my_EO.add_widget(enum1)
     my_EO.add_widget(enum2)
     toolpalette3.addWidget(enum1)
     toolpalette3.addWidget(enum2)
 
-    # Create second EO object with fancier options
     test_options2 = {'option 1':{'index':0,'tooltip':'Option 1 Description'},
                      'option 2':{'index':3,'tooltip':'Option 2 Description'},
                      'option 3':1} #tooltips are optional, only pass index if not using them

@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /device_base_class.py                                             #
+# /blacs/device_base_class.py                                       #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -28,6 +28,7 @@ from qtutils.qt.QtWidgets import (
     QVBoxLayout,
 )
 
+# Imported for its side effect: it installs the suite's exception hook.
 import labscript_utils.excepthook
 from qtutils import UiLoader
 
@@ -41,10 +42,9 @@ from labscript_utils.shared_drive import path_to_agnostic
 
 class DeviceTab(Tab):
     def __init__(self,notebook,settings,restart=False):
-        Tab.__init__(self,notebook,settings,restart)
+        super().__init__(notebook,settings,restart)
         self.connection_table = settings['connection_table']
         
-        # Create the variables we need
         self._AO = {}
         self._DO = {}
         self._DDS = {}
@@ -59,26 +59,23 @@ class DeviceTab(Tab):
         self._can_check_remote_values = False
         self._changed_radio_buttons = {}
         
-        # Call the initialise GUI function
         self.initialise_GUI() 
         self.restore_save_data(self.settings['saved_data'] if 'saved_data' in self.settings else {})
         self.initialise_workers()
         self._last_programmed_values = self.get_front_panel_values()
+        # A device whose remote values can be checked is not programmed here: the
+        # check finds it correct, or asks the user to resolve the inconsistency.
         if self._can_check_remote_values:
             self.statemachine_timeout_add(30000,self.check_remote_values)     
         else:       
-            # If we can check remote values, then no need to call program manual as 
-            # the remote device will either be programmed correctly, or will need an 
-            # inconsistency between local and remote values resolved
             self.program_device()
             
     def initialise_GUI(self):
-        # Override this function
+        """Override to create the device's outputs and widgets."""
         pass
         
     def initialise_workers(self):
-        # Override this function
-        # set the primary worker at this time
+        """Override to create the workers, and set the primary worker."""
         pass
 
     @property
@@ -96,9 +93,7 @@ class DeviceTab(Tab):
     def supports_remote_value_check(self,support):
         self._can_check_remote_values = bool(support)
     
-    ############################################################
-    # What do the properties dictionaries need to look like?   #
-    ############################################################
+    # What the properties dictionaries need to look like:
     #
     # digital_properties = {'hardware_channel_reference':{}, 'do0':{}}
     #
@@ -169,56 +164,45 @@ class DeviceTab(Tab):
 
     def create_digital_outputs(self,digital_properties):
         for hardware_name,properties in digital_properties.items():
-            # Save the DO object
             self._DO[hardware_name] = self._create_DO_object(self.device_name,hardware_name,hardware_name,properties)
     
     def _create_DO_object(self,parent_device,BLACS_hardware_name,labscript_hardware_name,properties):
-        # Find the connection name
         device = self.get_child_from_connection_table(parent_device,labscript_hardware_name)
         connection_name = device.name if device else '-'
 
-        # Instantiate the DO object
         return DO(BLACS_hardware_name, connection_name, self.device_name, self.program_device, self.settings)
 
     def create_image_outputs(self,image_properties):
         for hardware_name,properties in image_properties.items():
-            # Save the DO object
             self._image[hardware_name] = self._create_image_object(self.device_name,hardware_name,hardware_name,properties)
     
     def _create_image_object(self,parent_device,BLACS_hardware_name,labscript_hardware_name,properties):
-        # Find the connection name
         device = self.get_child_from_connection_table(parent_device,labscript_hardware_name)
         connection_name = device.name if device else '-'
         
-        # sanitise properties dictionary
+        # Pass on only the keyword arguments that Image accepts.
         prop = {}
         accepted_kwargs = ['width', 'height', 'x', 'y']
         for kwarg in accepted_kwargs:
             if kwarg in properties:
                 prop[kwarg] = properties[kwarg]                
         
-        # Instantiate the DO object
         return Image(BLACS_hardware_name, connection_name, self.device_name, self.program_device, self.settings, **prop)
     
     def create_analog_outputs(self,analog_properties):
         for hardware_name,properties in analog_properties.items():                    
-            # Create and save the AO object
             self._AO[hardware_name] = self._create_AO_object(self.device_name,hardware_name,hardware_name,properties)
 
     def _create_AO_object(self,parent_device,BLACS_hardware_name,labscript_hardware_name,properties):
-        # Find the connection name
         device = self.get_child_from_connection_table(parent_device,labscript_hardware_name)
         connection_name = device.name if device else '-'
         
-        # Get the calibration details
         calib_class = None
         calib_params = {}
         if device:
-            # get the AO from the connection table, find its calibration details
             calib_class = device.unit_conversion_class
             calib_params = device.unit_conversion_params
         
-        # Instantiate the AO object
         return AO(BLACS_hardware_name, connection_name, self.device_name, self.program_device, self.settings, calib_class, calib_params,
                 properties['base_unit'], properties['min'], properties['max'], properties['step'], properties['decimals'])
             
@@ -231,7 +215,6 @@ class DeviceTab(Tab):
             sub_chnls = {}
             for subchnl in subchnl_name_list:
                 if subchnl in properties:
-                    # Create the AO object
                     sub_chnls[subchnl] = self._create_AO_object(connection_name,hardware_name+'_'+subchnl,subchnl,properties[subchnl])
             
             if 'gate' in properties:
@@ -334,27 +317,30 @@ class DeviceTab(Tab):
             image_properties[channel] = {}
         image_widgets = self.create_image_widgets(image_properties)        
         
-        # Hack to maintain backwards compatibility with devices implemented
-        # prior to the introduction of the IMAGE output class 
+        # Devices written before the Image output class expect only three dicts.
         if self._image:
             return dds_widgets, ao_widgets, do_widgets, image_widgets
         else:
             return dds_widgets, ao_widgets, do_widgets
     
     def auto_place_widgets(self,*args):
+        """Place widgets in the tab layout, in tool palettes.
+
+        Each argument is a dict of widgets from a ``create_*_widgets`` method, which
+        goes in a palette named for its channel type, or a tuple ``(name, widgets)``
+        or ``(name, widgets, key)`` to name the palette, and to sort its channels by
+        ``key(channel_name)``. Empty and unrecognised arguments are skipped."""
         widget = QWidget()
         toolpalettegroup = ToolPaletteGroup(widget)
         for arg in args:
-            # A default sort algorithm that just returns the object (this is equivalent to not specifying the sort gorithm)
             sort_algorithm = lambda x: x
             if isinstance(arg, tuple) and len(arg) > 1 and isinstance(arg[1], dict) and len(arg[1].keys()) > 0:
-                # we have a name, use it!
                 name = arg[0]
                 widget_dict = arg[1]
                 if len(arg) > 2:
                     sort_algorithm = arg[2]
             else:
-                # ignore things that are not dictionaries or empty dictionaries
+                # Skip anything that is not a non-empty dict.
                 if not isinstance(arg, dict) or len(arg.keys()) < 1:
                     continue
                 if isinstance(self.get_channel(list(arg.keys())[0]),AO):
@@ -366,10 +352,9 @@ class DeviceTab(Tab):
                 elif isinstance(self.get_channel(list(arg.keys())[0]),DDS):
                     name = 'DDS Outputs'
                 else:
-                    # If it isn't DO, DDS or AO, we should forget about them and move on to the next argument
+                    # Other channel types have no default name: pass them as (name, dict).
                     continue
                 widget_dict = arg
-            # Create tool palette
             if toolpalettegroup.has_palette(name):
                 toolpalette = toolpalettegroup.get_palette(name)
             else:
@@ -378,28 +363,24 @@ class DeviceTab(Tab):
             for channel in sorted(widget_dict.keys(),key=sort_algorithm):
                 toolpalette.addWidget(widget_dict[channel],True)
          
-        # Add the widget containing the toolpalettegroup to the tab layout
         self.get_tab_layout().addWidget(widget)
         self.get_tab_layout().addItem(QSpacerItem(0,0,QSizePolicy.Minimum,QSizePolicy.MinimumExpanding))
     
-    # This method should be overridden in your device class if you want to save any data not
-    # stored in an AO, DO, Image or DDS object
-    # This method should return a dictionary, and this dictionary will be passed to the restore_save_data()
-    # method when the tab is initialised
     def get_save_data(self):
+        """Override to return a dict of data to save that is not stored in an AO, DO,
+        Image or DDS object. It is passed to ``restore_save_data`` when the tab is
+        initialised."""
         return {}
     
-    # This method should be overridden in your device class if you want to restore data 
-    # (saved by get_save_data()) when teh tab is initialised.
-    # You will be passed a dictionary of the form specified by your get_save_data() method
-    # 
-    # Note: You must handle the case where the data dictionary is empty (or one or more keys are missing)
-    #       This case will occur the first time BLACS is started on a PC, or if the BLACS datastore is destroyed
     def restore_save_data(self,data):
+        """Override to restore the dict that ``get_save_data`` returned.
+
+        It may be empty or lack keys, as when BLACS first starts on a PC or its
+        datastore has been destroyed, so handle that."""
         return
     
     def update_from_settings(self,settings):
-        Tab.update_from_settings(self, settings)
+        super().update_from_settings(settings)
         self.restore_save_data(settings['saved_data'])
     
         self.settings = settings
@@ -432,15 +413,16 @@ class DeviceTab(Tab):
         else:
             return None
             
-    # Only allow this to be called when we are in MODE_MANUAL and keep it queued up if we are not
-    # When pulling out the state from the state queue, we check to see if there is an adjacent state that is more recent, and use that one
-    # or whichever is the latest without encountering a different state).
-    # This prevenets 'a million' calls to program_device from executing, potentially slowing down the system
     @define_state(MODE_MANUAL,True,delete_stale_states=True)
     def program_device(self):
+        """Program the device with the front panel values.
+
+        Runs only in MODE_MANUAL, and stays queued until then. Of consecutive queued
+        calls only the last runs, so a burst of changes does not queue many
+        programmings."""
         self._last_programmed_values = self.get_front_panel_values()
         
-        # get rid of any "remote values changed" dialog
+        # Dismiss any "remote values changed" dialog.
         self._changed_widget.hide()
         
         results = yield(self.queue_work(self._primary_worker,'program_manual',self._last_programmed_values))
@@ -449,20 +431,19 @@ class DeviceTab(Tab):
                 returned_results = yield(self.queue_work(worker,'program_manual',self._last_programmed_values))
                 results.update(returned_results)
         
-        # If the worker process returns something, we assume it wants us to coerce the front panel values
+        # A worker that returns values is coercing the front panel to them.
         if results:
             for channel,remote_value in results.items():
                 if channel not in self._last_programmed_values:
-                    raise RuntimeError('The worker function program_manual for device %s is returning data for channel %s but the BLACS tab is not programmed to handle this channel'%(self.device_name,channel))
+                    raise RuntimeError(f'The worker function program_manual for device {self.device_name} is returning data for channel {channel} but the BLACS tab is not programmed to handle this channel')
                 
                 output = self.get_channel(channel)
                 if output is None:
-                    raise RuntimeError('The channel %s on device %s is in the last programmed values, but is not in the AO, DO or DDS output store. Something has gone badly wrong!'%(channel,self.device_name))
+                    raise RuntimeError(f'The channel {channel} on device {self.device_name} is in the last programmed values, but is not in the AO, DO or DDS output store. Something has gone badly wrong!')
                 else:                    
                     if output.value == self._last_programmed_values[channel]:
                         output.set_value(remote_value,program=False)
             
-                        # Update the last_programmed_values            
                         self._last_programmed_values[channel] = remote_value
     
     @define_state(MODE_MANUAL,True)
@@ -473,55 +454,47 @@ class DeviceTab(Tab):
                 returned_results = yield(self.queue_work(worker,'check_remote_values'))
                 self._last_remote_values.update(returned_results)
         
-        # compare to current front panel values and prompt the user if they don't match
-        # We compare to the last_programmed values so that it doesn't get confused if the user has changed the value on the front panel
-        # and the program_manual command is still queued up
-        
-        # If no results were returned, raise an exception so that we don't keep calling this function over and over again, 
-        # filling up the text box with the same error, eventually consuming all CPU/memory of the PC
+        # Raise when nothing came back, so the timeout does not call this again and
+        # again, filling the output box with the same error.
         if not self._last_remote_values or not isinstance(self._last_programmed_values, dict):
             raise Exception('Failed to get remote values from device. Is it still connected?')
             
-        # A variable to indicate if any of the channels have a changed value
         overall_changed = False
             
-        # A place to store radio buttons in
         self._changed_radio_buttons = {}
             
-        # Clean up the previously used layout
         while not self._ui.changed_layout.isEmpty():
             item = self._ui.changed_layout.itemAt(0)
-            # This is the only way I could make the widget actually be removed.
-            # using layout.removeItem/removeWidget causes the layout to still draw the old item in its original space, and
-            # then draw new items over the top of the old. Very odd behaviour, could be a windows 8 bug I suppose!
+            # setParent(None) is needed: layout.removeItem or removeWidget leaves the
+            # old item drawn, with the new items over the top of it.
             item.widget().setParent(None)
             
-        # We expect a dictionary of channel:value pairs
+        # Compare with the last programmed values, not the front panel, so a change
+        # still waiting to be programmed is not reported as a mismatch.
         for channel in sorted(self._last_remote_values):
             remote_value = self._last_remote_values[channel]
             if channel not in self._last_programmed_values:
-                raise RuntimeError('The worker function check_remote_values for device %s is returning data for channel %s but the BLACS tab is not programmed to handle this channel'%(self.device_name,channel))
+                raise RuntimeError(f'The worker function check_remote_values for device {self.device_name} is returning data for channel {channel} but the BLACS tab is not programmed to handle this channel')
             
-            # A variable to indicate if this channel has changed
             changed = False
             
             if channel in self._DDS:
                 front_value = self._last_programmed_values[channel]
-                # format the entries for the DDS object correctly, then compare
+                # Format both sides to the sub-channel's decimals, then compare.
                 
                 front_values_formatted = {}
                 remote_values_formatted = {}
                 for sub_chnl in front_value:
                     if sub_chnl not in remote_value:
-                        raise RuntimeError('The worker function check_remote_values has not returned data for the sub-channel %s in channel %s'%(sub_chnl,channel))
+                        raise RuntimeError(f'The worker function check_remote_values has not returned data for the sub-channel {sub_chnl} in channel {channel}')
                     
                     if sub_chnl == 'gate':
                         front_values_formatted[sub_chnl] = str(bool(int(front_value[sub_chnl])))
                         remote_values_formatted[sub_chnl] = str(bool(int(remote_value[sub_chnl])))
                     else:
                         decimals = self._DDS[channel].__getattribute__(sub_chnl)._decimals
-                        front_values_formatted[sub_chnl] = ("%."+str(decimals)+"f")%front_value[sub_chnl]
-                        remote_values_formatted[sub_chnl] = ("%."+str(decimals)+"f")%remote_value[sub_chnl]
+                        front_values_formatted[sub_chnl] = f'{front_value[sub_chnl]:.{decimals}f}'
+                        remote_values_formatted[sub_chnl] = f'{remote_value[sub_chnl]:.{decimals}f}'
                         
                     if front_values_formatted[sub_chnl] != remote_values_formatted[sub_chnl]:
                         changed = True
@@ -530,18 +503,16 @@ class DeviceTab(Tab):
                     ui = UiLoader().load(os.path.join(BLACS_DIR, 'tab_value_changed_dds.ui'))
                     ui.channel_label.setText(self._DDS[channel].name)
                     for sub_chnl in front_value:
-                        ui.__getattribute__('front_%s_value'%sub_chnl).setText(front_values_formatted[sub_chnl])
-                        ui.__getattribute__('remote_%s_value'%sub_chnl).setText(remote_values_formatted[sub_chnl])
+                        ui.__getattribute__(f'front_{sub_chnl}_value').setText(front_values_formatted[sub_chnl])
+                        ui.__getattribute__(f'remote_{sub_chnl}_value').setText(remote_values_formatted[sub_chnl])
                     
-                    # Hide unused sub_channels of this DDS
                     for sub_chnl in self._DDS[channel].get_unused_subchnl_list():
-                        ui.__getattribute__('front_%s_value'%sub_chnl).setVisible(False)
-                        ui.__getattribute__('front_%s_label'%sub_chnl).setVisible(False)
-                        ui.__getattribute__('remote_%s_value'%sub_chnl).setVisible(False)
-                        ui.__getattribute__('remote_%s_label'%sub_chnl).setVisible(False)
+                        ui.__getattribute__(f'front_{sub_chnl}_value').setVisible(False)
+                        ui.__getattribute__(f'front_{sub_chnl}_label').setVisible(False)
+                        ui.__getattribute__(f'remote_{sub_chnl}_value').setVisible(False)
+                        ui.__getattribute__(f'remote_{sub_chnl}_label').setVisible(False)
                 
             elif channel in self._DO:
-                # This is an easy case!
                 front_value = str(bool(int(self._last_programmed_values[channel])))
                 remote_value = str(bool(int(remote_value)))
                 if front_value != remote_value:
@@ -551,9 +522,8 @@ class DeviceTab(Tab):
                     ui.front_value.setText(front_value)
                     ui.remote_value.setText(remote_value)
             elif channel in self._AO:
-                # A intermediately complicated case!
-                front_value = ("%."+str(self._AO[channel]._decimals)+"f")%self._last_programmed_values[channel]
-                remote_value = ("%."+str(self._AO[channel]._decimals)+"f")%remote_value
+                front_value = f'{self._last_programmed_values[channel]:.{self._AO[channel]._decimals}f}'
+                remote_value = f'{remote_value:.{self._AO[channel]._decimals}f}'
                 if front_value != remote_value:
                     changed = True
                     ui = UiLoader().load(os.path.join(BLACS_DIR, 'tab_value_changed.ui'))
@@ -561,7 +531,6 @@ class DeviceTab(Tab):
                     ui.front_value.setText(front_value)
                     ui.remote_value.setText(remote_value)
             elif channel in self._EO:
-                # very easy case, values are strings
                 front_value = str(self._last_programmed_values[channel])
                 remote_value = str(remote_value)
                 if front_value != remote_value:
@@ -576,17 +545,14 @@ class DeviceTab(Tab):
             if changed:
                 overall_changed = True
             
-                # Add the changed widget for this channel to a layout!
                 self._ui.changed_layout.addWidget(ui)
                 
-                # save the radio buttons so that we can access their state later!
+                # on_resolve_value_inconsistency reads these radio buttons.
                 self._changed_radio_buttons[channel] = ui.use_remote_values
                 
         if overall_changed:
-            # show the remote_values_change dialog
             self._changed_widget.show()
         
-            # Add an "apply" button and link to on_resolve_value_inconsistency
             buttonWidget = QWidget()
             buttonlayout = QHBoxLayout(buttonWidget)
             button = QPushButton(QIcon(':/qtutils/fugue/arrow-turn-000-left'), "Apply")
@@ -597,41 +563,40 @@ class DeviceTab(Tab):
             self._ui.changed_layout.addWidget(buttonWidget)
 
     def on_resolve_value_inconsistency(self):
-        # get the values and update the device/front panel
         needs_programming = False
         for channel,radio in self._changed_radio_buttons.items():
             if radio.isChecked():
                 output = self.get_channel(channel)
                 if output is None:
-                    raise RuntimeError('on_resolve_value_inconsistency is being asked to handle a channel that is not a DDS, AO or DO (channel: %s, device: %s)'%(channel,self.device_name))
-                # The device already has this value, so no need to program it!
+                    raise RuntimeError(f'on_resolve_value_inconsistency is being asked to handle a channel that is not a DDS, AO or DO (channel: {channel}, device: {self.device_name})')
+                # The device already has this value, so do not program it.
                 output.set_value(self._last_remote_values[channel],program=False)
             else:
-                # we only need to program the device if one or more channels is using the front panel value
+                # Programming is needed only if some channel keeps its front panel value.
                 needs_programming = True
                 
         if needs_programming:
             self.program_device()
         else:
-            # Now that the inconsistency is resolved, Let's update the "last programmed values"
-            # to match the remote values
+            # Every channel now has the remote value, so these are the last programmed.
             self._last_programmed_values = self.get_front_panel_values()
             
         self._changed_widget.hide()
     
     @define_state(MODE_BUFFERED,True)
     def start_run(self,notify_queue):
-        raise NotImplementedError('The device %s has not implemented a start method and so cannot be used to trigger the experiment to begin. Please implement the start method or use a different pseudoclock as the master pseudoclock'%self.device_name)
+        raise NotImplementedError(f'The device {self.device_name} has not implemented a start method and so cannot be used to trigger the experiment to begin. Please implement the start method or use a different pseudoclock as the master pseudoclock')
     
     @define_state(MODE_MANUAL,True)
     def transition_to_buffered(self,h5_file,notify_queue): 
-        # Get rid of any "remote values changed" dialog
+        # Dismiss any "remote values changed" dialog.
         self._changed_widget.hide()
     
         self.mode = MODE_TRANSITION_TO_BUFFERED
         
         h5_file = path_to_agnostic(h5_file)
-        # transition_to_buffered returns the final values of the run, to update the GUI with at the end of the run:
+        # The worker returns the run's final values, to show in the GUI at the end
+        # of the run.
         transitioned_called = [self._primary_worker]
         front_panel_values = self.get_front_panel_values()
         self._final_values = yield(self.queue_work(self._primary_worker,'_transition_to_buffered',self.device_name,h5_file,front_panel_values,self._force_full_buffered_reprogram))
@@ -645,7 +610,7 @@ class DeviceTab(Tab):
                     self._final_values = None
                     break
         
-        # If we get None back, then the worker process did not finish properly
+        # None means a worker did not finish properly.
         if self._final_values is None:
             notify_queue.put([self.device_name,'fail'])
             self.abort_transition_to_buffered(transitioned_called)
@@ -653,7 +618,7 @@ class DeviceTab(Tab):
             if self._supports_smart_programming:
                 self.force_full_buffered_reprogram = False
                 self._ui.button_clear_smart_programming.setEnabled(True)
-            # Tell the shot executor that we're done:
+            # Tell the shot executor that we are done.
             self.mode = MODE_BUFFERED
             notify_queue.put([self.device_name,'success'])
        
@@ -667,7 +632,7 @@ class DeviceTab(Tab):
             abort_success = yield(self.queue_work(worker,'abort_transition_to_buffered'))
             if not abort_success:
                 success = False
-                # don't break here, so that as much of the device is returned to normal
+                # No break: return as much of the device to normal as possible.
                 
         if success:
             self.mode = MODE_MANUAL
@@ -682,7 +647,7 @@ class DeviceTab(Tab):
             abort_success = yield(self.queue_work(worker,'abort_buffered'))
             if not abort_success:
                 success = False
-                # don't break here, so that as much of the device is returned to normal
+                # No break: return as much of the device to normal as possible.
         
         if success:
             notify_queue.put([self.device_name,'success'])
@@ -701,9 +666,8 @@ class DeviceTab(Tab):
             transition_success = yield(self.queue_work(worker,'transition_to_manual'))
             if not transition_success:
                 success = False
-                # don't break here, so that as much of the device is returned to normal
+                # No break: return as much of the device to normal as possible.
         
-        # Update the GUI with the final values of the run:
         for channel, value in self._final_values.items():
             if channel in self._AO:
                 self._AO[channel].set_value(value,program=False)
@@ -730,18 +694,11 @@ class DeviceTab(Tab):
             self._last_programmed_values = self.get_front_panel_values()
             
 class DeviceWorker(Worker):
+    """Dummy worker for the demo tabs below."""
     def init(self):
-        # You read correctly, this isn't __init__, it's init. It's the
-        # first thing that will be called in the new process. You should
-        # do imports here, define instance variables, that sort of thing. You
-        # shouldn't import the hardware modules at the top of your file,
-        # because then they will be imported in both the parent and
-        # the child processes and wont be cleanly restarted when the subprocess
-        # is restarted. Since we're inside a method call though, you'll
-        # have to use global statements for the module imports, as shown
-        # below. Either that or you can make them instance variables, ie:
-        # import module; self.module = module. Up to you, I prefer
-        # the former.
+        # init, not __init__, is the first call in the new process. Import hardware
+        # modules here, not at the top of the file, so a restarted worker imports
+        # them afresh; `global` makes the import visible to the other methods.
         global serial; import serial
         global time; import time
         
@@ -793,9 +750,7 @@ class DeviceWorker(Worker):
         
             
 if __name__ == '__main__':
-    import sys
     import logging.handlers
-    # Setup logging:
     logger = logging.getLogger('BLACS')
     handler = logging.handlers.RotatingFileHandler(os.path.join(BLACS_DIR, 'BLACS.log'), maxBytes=1024**2, backupCount=0)
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -810,28 +765,23 @@ if __name__ == '__main__':
     else:
         sys.stdout = sys.stderr = open(os.devnull)
     logger.setLevel(logging.DEBUG)
-    #labscript_utils.excepthook.set_logger(logger)
     logger.info('\n\n===============starting===============\n')
             
 if __name__ == '__main__':
-    # Test case!
-    
     from labscript_utils.connections import ConnectionTable
     from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
     
     class MyDAQTab(DeviceTab):
         
         def initialise_GUI(self):
-            # Create Digital Output Objects
             do_prop = {}
             for i in range(32):
-                do_prop['port0/line%d'%i] = {}
+                do_prop[f'port0/line{i}'] = {}
             self.create_digital_outputs(do_prop)
                 
-            # Create Analog Output objects
             ao_prop = {}
             for i in range(4):
-                ao_prop['ao%d'%i] = {'base_unit':'V',
+                ao_prop[f'ao{i}'] = {'base_unit':'V',
                                      'min':-10.0,
                                      'max':10.0,
                                      'step':0.01,
@@ -839,24 +789,17 @@ if __name__ == '__main__':
                                     }            
             self.create_analog_outputs(ao_prop)
             
-            # Create widgets for output objects
             dds_widgets,ao_widgets,do_widgets = self.auto_create_widgets()
             
-            # This function allows you do sort the order of widgets by hardware name.
-            # it is pass to the Python 'sorted' function as key=sort when passed in as 
-            # the 3rd item of a tuple p(the tuple being an argument of self.auto_place_widgets()
-            #
-            # This function takes the channel name (hardware name) and returns a string (or whatever) 
-            # that when sorted alphabetically, returns the correct order
+            # A sort key for the channel names, as the third item of an
+            # auto_place_widgets tuple.
             def sort(channel):
                 port,line = channel.replace('port','').replace('line','').split('/')
                 port,line = int(port),int(line)
-                return '%02d/%02d'%(port,line)
+                return f'{port:02d}/{line:02d}'
             
-            # and auto place them in the UI
             self.auto_place_widgets(("DDS Outputs",dds_widgets),("Analog Outputs",ao_widgets),("Digital Outputs - Port 0",do_widgets,sort))
             
-            # Set the primary worker
             self.create_worker("my_worker_name",DeviceWorker,{})
             self.primary_worker = "my_worker_name"    
             self.create_worker("my_secondary_worker_name",DeviceWorker,{})
@@ -864,7 +807,6 @@ if __name__ == '__main__':
     
             self.supports_remote_value_check(True)
     
-            # Create buttons to test things!
             button1 = QPushButton("Transition to Buffered")
             button1.clicked.connect(lambda: self.transition_to_buffered('',Queue()))
             self.get_tab_layout().addWidget(button1)
@@ -875,16 +817,14 @@ if __name__ == '__main__':
     class MyDummyTab(DeviceTab):
         
         def initialise_GUI(self):
-            # Create Digital Output Objects
             do_prop = {}
             for i in range(1):
                 do_prop['port0/line%d'] = {}
             self.create_digital_outputs(do_prop)
                 
-            # Create Analog Output objects
             ao_prop = {}
             for i in range(1):
-                ao_prop['ao%d'%i] = {'base_unit':'V',
+                ao_prop[f'ao{i}'] = {'base_unit':'V',
                                      'min':-10.0,
                                      'max':10.0,
                                      'step':0.01,
@@ -906,28 +846,21 @@ if __name__ == '__main__':
             }
             self.create_enum_outputs(eo_prop)
 
-            # Create widgets for output objects
             dds_widgets,ao_widgets,do_widgets = self.auto_create_widgets()
             eo_widgets = self.auto_create_enum_widgets()
             
-            # This function allows you do sort the order of widgets by hardware name.
-            # it is pass to the Python 'sorted' function as key=sort when passed in as 
-            # the 3rd item of a tuple p(the tuple being an argument of self.auto_place_widgets()
-            #
-            # This function takes the channel name (hardware name) and returns a string (or whatever) 
-            # that when sorted alphabetically, returns the correct order
+            # A sort key for the channel names, as the third item of an
+            # auto_place_widgets tuple.
             def sort(channel):
                 port,line = channel.replace('port','').replace('line','').split('/')
                 port,line = int(port),int(line)
-                return '%02d/%02d'%(port,line)
+                return f'{port:02d}/{line:02d}'
             
-            # and auto place them in the UI
             self.auto_place_widgets(("DDS Outputs",dds_widgets),
                                     ("Analog Outputs",ao_widgets),
                                     ("Digital Outputs - Port 0",do_widgets),
                                     ('Enums', eo_widgets))
             
-            # Set the primary worker
             self.create_worker("my_worker_name",DeviceWorker,{})
             self.primary_worker = "my_worker_name"    
             self.create_worker("my_secondary_worker_name",DeviceWorker,{})
@@ -935,7 +868,6 @@ if __name__ == '__main__':
     
             self.supports_remote_value_check(True)
     
-            # Create buttons to test things!
             button1 = QPushButton("Transition to Buffered")
             button1.clicked.connect(lambda: self.transition_to_buffered('',Queue()))
             self.get_tab_layout().addWidget(button1)
@@ -948,7 +880,7 @@ if __name__ == '__main__':
     class MyWindow(QWidget):
         
         def __init__(self,*args,**kwargs):
-            QWidget.__init__(self,*args,**kwargs)
+            super().__init__(*args,**kwargs)
             self.are_we_closed = False
             self.my_tabs = []
         

@@ -1,8 +1,8 @@
 #####################################################################
 #                                                                   #
-# /plugins/cycle_time/__init__.py                                   #
+# /blacs/plugins/cycle_time/__init__.py                             #
 #                                                                   #
-# Copyright 2017, Monash Univiersity and contributors               #
+# Copyright 2017, Monash University and contributors                #
 #                                                                   #
 # This file is part of the program BLACS, in the labscript suite    #
 # (see http://labscriptsuite.org), and is licensed under the        #
@@ -12,24 +12,19 @@
 #####################################################################
 from queue import Queue, Empty
 from time import monotonic
-import time
 import logging
-import os
 
-from qtutils import UiLoader, inmain, inmain_decorator
+from qtutils import inmain
 
 import labscript_utils.h5_lock
 import h5py
 
-from qtutils.qt.QtGui import QIcon
-from qtutils.qt.QtCore import QSize
-
-from blacs.plugins import PLUGINS_DIR, BasePlugin, callback
+from blacs.plugins import BasePlugin, callback
 from labscript_utils.properties import get_attribute
 
 name = "cycle_time"
 module = "cycle_time" # should be folder name
-logger = logging.getLogger('BLACS.plugin.%s'%module)
+logger = logging.getLogger(f'BLACS.plugin.{module}')
 
 
 class Plugin(BasePlugin):
@@ -66,7 +61,6 @@ class Plugin(BasePlugin):
             try:
                 group = f['shot_properties']
             except KeyError:
-                # Nothing for us to do
                 return
             self.next_target_cycle_time = get_attribute(group, 'target_cycle_time')
             self.next_delay_after_programming = get_attribute(
@@ -76,8 +70,7 @@ class Plugin(BasePlugin):
         if not self.delay_after_programming:
             self.do_delay(h5_filepath)
 
-    # this callback should run before the progress bar plugin, but after all other
-    # callbacks. The priority should be set accordingly.
+    # Runs before the progress bar plugin, but after all other callbacks.
     @callback(priority=100) 
     def science_starting(self, h5_filepath):
         if self.delay_after_programming:
@@ -85,8 +78,7 @@ class Plugin(BasePlugin):
 
     def do_delay(self, h5_filepath):
         if self.target_cycle_time is not None and self.time_of_last_shot is not None:
-            # Wait until it has been self.target_cycle_time since the start of the last
-            # shot. Otherwise, return immediately.
+            # Wait until target_cycle_time has passed since the last shot started.
             deadline = self.time_of_last_shot + self.target_cycle_time
             inmain(self.BLACS['ui'].shot_abort_button.clicked.connect, self._abort)
             # Store the current shot status, to restore it after we are done:
@@ -96,7 +88,7 @@ class Plugin(BasePlugin):
                 if remaining <= 0:
                     break
                 self.shot_executor.set_status(
-                    'Waiting {:.1f}s for target cycle time'.format(remaining),
+                    f'Waiting {remaining:.1f}s for target cycle time',
                     h5_filepath,
                 )
                 try:
@@ -104,9 +96,7 @@ class Plugin(BasePlugin):
                     break # Got an abort
                 except Empty:
                     continue
-            # Disconnect from the abort button:
             inmain(self.BLACS['ui'].shot_abort_button.clicked.disconnect, self._abort)
-            # Restore previous_status:
             self.shot_executor.set_status(previous_status, h5_filepath)
 
         self.time_of_last_shot = monotonic()

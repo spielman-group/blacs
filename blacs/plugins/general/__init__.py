@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /plugins/general/__init__.py                                      #
+# /blacs/plugins/general/__init__.py                                #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -20,11 +20,10 @@ class Plugin(BasePlugin):
         return [{'context': 'settings', 'page': Setting}]
 
 
-class Setting(object):
+class Setting:
     name = "General"
 
     def __init__(self,data):
-        # This is our data store!
         self.data = data
         
         self.var_list = [('ct_editor','','text','setText')]
@@ -32,11 +31,11 @@ class Setting(object):
             if var[0] not in self.data:
                 data[var[0]] = var[1]
         
-    # Create the GTK page, return the page and an icon to use on the label (the class name attribute will be used for the label text)   
+    # Return the settings page and an icon for its label; the label text is the
+    # class's name attribute.
     def create_dialog(self,notebook):
         ui = UiLoader().load(os.path.join(PLUGINS_DIR, 'general', 'general.ui'))
         
-        # get the widgets!
         self.widgets = {}
         for var in self.var_list:            
             self.widgets[var[0]] = getattr(ui,var[0])
@@ -51,7 +50,6 @@ class Setting(object):
         return None
     
     def save(self):
-        # transfer the contents of the list store into the data store, and then return the data store
         for var in self.var_list:
             self.data[var[0]] = str(getattr(self.widgets[var[0]],var[2])())
         

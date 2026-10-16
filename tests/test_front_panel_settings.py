@@ -1,8 +1,7 @@
 """Saving the front panel to HDF5, and reading it back.
 
-This runs when BLACS closes, and nothing else does: a failure here leaves BLACS
-unable to quit at all, because closeEvent keeps retrying the close every 100 ms
-and never reaches exit_complete. That is worth one round trip.
+It runs as BLACS closes: a failure here leaves BLACS unable to quit, because
+closeEvent keeps retrying the close and never reaches exit_complete.
 """
 import os
 import tempfile
@@ -46,9 +45,8 @@ class SaveAndRestoreTests(unittest.TestCase):
         self.addCleanup(
             lambda: os.path.exists(self.path) and os.remove(self.path)
         )
-        # __init__ only records the settings path and connection table. The
-        # settings path decides whether the window is saved; the connection
-        # table is read only when asked to save it:
+        # __init__ only records the settings path and connection table, and the
+        # table is read only when asked to save it.
         self.settings = FrontPanelSettings.__new__(FrontPanelSettings)
         self.settings.settings_path = self.path
 

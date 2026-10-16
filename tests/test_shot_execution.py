@@ -1,8 +1,8 @@
 """Behavioural tests for BLACS's shot executor that need no runmanager.
 
-ShotExecutor.__init__ starts the shot loop and wires up real Qt widgets,
-neither of which belongs in a unit test, so these build an executor without it
-and give it the small surface the methods under test actually use.
+ShotExecutor.__init__ starts the shot loop and wires up real Qt widgets, so
+these build an executor without it, with only the surface the methods under
+test use.
 """
 import os
 import shutil
@@ -17,8 +17,8 @@ from fixtures import make_executor
 from blacs import shot_execution
 from blacs.shot_execution import ShotExecutor
 
-# After the imports above, never before them: labscript_utils.h5_lock has to
-# be imported before anything imports h5py, and BLACS is what imports it.
+# After the BLACS imports above: they import labscript_utils.h5_lock, which has
+# to precede h5py.
 import h5py
 
 
@@ -41,8 +41,8 @@ class RequestShotsControlTests(unittest.TestCase):
 
 class LocalFallbackTests(unittest.TestCase):
     def test_each_fallback_repetition_gets_a_file_of_its_own(self):
-        # The same override file is run over and over, and each run's data is
-        # written to a fresh numbered copy rather than over the last one.
+        # The same override file is run over and over; each run writes to a
+        # fresh numbered copy.
         executor = make_executor()
         directory = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, directory, True)
@@ -67,10 +67,10 @@ class LocalFallbackTests(unittest.TestCase):
 class RerunShotFileTests(unittest.TestCase):
     """What a copy of a shot file carries over, and what BLACS writes itself.
 
-    A shot file that already holds data is run by copying it first, so the run
-    writes into the copy and the data already there is left alone. Every root
-    attribute crosses over untouched; ``run repeat``, which counts which
-    execution of the shot a file holds, is the one field BLACS writes.
+    A shot file that already holds data is copied before it is run, so the data
+    already there is left alone. Every root attribute crosses over; ``run
+    repeat``, which counts which execution of the shot a file holds, is the one
+    BLACS writes.
     """
 
     def setUp(self):
@@ -108,9 +108,8 @@ class RerunShotFileTests(unittest.TestCase):
         self.assertEqual(attributes['run repeat'], 1, 'which execution this file is')
 
     def test_a_failed_shot_is_reset_for_another_go_at_the_same_run(self):
-        # A shot that failed is put back as it was, in place and under its own
-        # name, so it can be run again. It is the same execution being attempted
-        # again, so its repeat number stands.
+        # A failed shot is reset in place under its own name; it is the same
+        # execution attempted again, so its repeat number stands.
         path = self.shot_file(
             'shot_rep00002.h5', shot_id='shot-1', **{'run repeat': 2}
         )

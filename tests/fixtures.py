@@ -1,19 +1,8 @@
 """Stand-ins shared by BLACS's tests.
 
-``FakeUi`` is the schema of ``main.ui``'s widget names written down in Python.
-It used to be written down in more than one test file, which meant a widget
-could be renamed, one copy fixed, and the other left describing a window that
-no longer exists -- with the suite still green. That is the one thing a
-stand-in for the UI must not do, so there is one copy of it here.
-
-``make_executor`` is here for the same reason. A field added to
-``ShotExecutor`` had to be added by hand to each place a test built one, and
-missing the second showed up not as a failing test but as a status server that
-appeared to be offline, because the snapshot raised on the attribute that was
-not there.
-
-The two callers do not need the same executor, so this builds the plain one and
-returns it for the caller to add to. What it must not do is leave a field out.
+``FakeUi`` writes down main.ui's widget names and ``make_executor`` builds a
+``ShotExecutor`` with every field set, each once, so a renamed widget or a new
+field cannot leave a second copy describing something that no longer exists.
 """
 import logging
 import sys
@@ -21,23 +10,8 @@ import threading
 import types
 
 
-class _SilentSplash(object):
-    """A splash screen that is never built and never shown.
-
-    ``blacs/__main__.py`` builds a ``Splash`` and calls ``show()`` at module
-    scope, and only hides it under ``if __name__ == '__main__'``. So merely
-    importing the module puts the startup banner on the screen of whoever is
-    running the tests and leaves it there, because nothing in a test run
-    reaches the line that takes it down.
-
-    Standing in for the splash module before the import is what avoids that,
-    and it avoids it completely: ``Splash.__init__`` is also what creates the
-    ``QApplication``, so with this in place the import creates no Qt
-    application at all rather than a hidden one. The one the tests need is
-    built below, after the import. A test that renders must also ``show()`` its
-    window, as ``test_main_window_layout.py`` does, because Qt does not lay out
-    a widget that was never shown.
-    """
+class _SilentSplash:
+    """A splash screen that is never built or shown."""
 
     def __init__(self, *args, **kwargs):
         pass
@@ -53,15 +27,10 @@ class _SilentSplash(object):
 
 
 def _import_blacs_without_starting_it():
-    """Import ``blacs.__main__``, and ``runmanager.__main__``, for the real
-    classes the tests borrow.
-
-    The tests exercise the applications' own methods rather than descriptions
-    of them, which means importing the modules that define them. Importing
-    either must not start its application, so the splash module is stood in
-    for over the imports and put back afterwards, leaving ``sys.modules`` as it
-    was found.
-    """
+    """Import ``blacs.__main__`` and ``runmanager.__main__`` without their splash."""
+    # Both build a Splash, and so the QApplication, at module scope and hide it
+    # only under __main__, which leaves the banner on screen. The splash module
+    # is stood in for over the imports and put back afterwards.
     fake_splash = types.ModuleType('labscript_utils.splash')
     fake_splash.Splash = _SilentSplash
     fake_splash.get_qapplication = lambda *args, **kwargs: None
@@ -86,12 +55,12 @@ from blacs.shot_execution import PublishedStatus, ShotExecutor
 from labscript_utils.qtwidgets.link_indicator import LinkIndicator
 from qtutils.qt.QtWidgets import QApplication
 
-# The runmanager light is real, and it needs an application. Held for
-# the life of the process, as the layout tests hold theirs.
+# The runmanager light is real and needs an application, held for the life of
+# the process.
 _qapplication = QApplication.instance() or QApplication([])
 
 
-class FakeTextWidget(object):
+class FakeTextWidget:
     def __init__(self):
         self._text = ''
 
@@ -102,7 +71,7 @@ class FakeTextWidget(object):
         self._text = str(value)
 
 
-class FakeButton(object):
+class FakeButton:
     def __init__(self):
         self._checked = False
         self.clicked = types.SimpleNamespace(
@@ -119,7 +88,7 @@ class FakeButton(object):
         pass
 
 
-class FakeUi(object):
+class FakeUi:
     """The widget names main.ui carries, and nothing behind them."""
 
     def __init__(self):
@@ -130,12 +99,12 @@ class FakeUi(object):
         self.running_shot_name = FakeTextWidget()
 
 
-class FakeConfig(object):
+class FakeConfig:
     def getfloat(self, section, option, fallback=None):
         return fallback
 
 
-class FakeBLACS(object):
+class FakeBLACS:
     """A BLACS with nothing in it, for tests that never reach a device."""
 
     exp_config = FakeConfig()
@@ -144,10 +113,9 @@ class FakeBLACS(object):
 def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     """A ShotExecutor with every field set and nothing behind it.
 
-    Built with ``__new__`` because ``__init__`` reaches for the application.
-    Every attribute the class expects is set here, so that a field added to
-    ShotExecutor is added in one place and a test that forgets one fails
-    loudly rather than through a snapshot that quietly raises.
+    Built with ``__new__`` because ``__init__`` reaches for the application. A
+    field added to ShotExecutor is added here once, so a test that misses one
+    fails loudly instead of through a snapshot that quietly raises.
     """
     executor = ShotExecutor.__new__(ShotExecutor)
     executor._ui = FakeUi() if ui is None else ui
@@ -164,8 +132,8 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     executor.published_status = PublishedStatus('', None, None)
     executor.last_opened_shots_folder = ''
     executor.master_pseudoclock = None
-    # The shot loop's thread. __init__ starts it; an executor built here has no
-    # loop running, and a test that wants one puts a started thread here.
+    # __init__ starts the shot loop's thread; a test that wants one running
+    # puts a started thread here.
     executor.manager = threading.Thread(target=lambda: None)
     # Built but not started: no test here probes a runmanager for the light.
     executor._runmanager_link = LinkIndicator('runmanager', 'localhost', 0)
