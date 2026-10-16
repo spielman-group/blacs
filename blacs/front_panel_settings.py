@@ -13,7 +13,6 @@
 import os
 import logging
 
-from qtutils.qt.QtWidgets import QMessageBox
 
 import labscript_utils.excepthook
 import numpy
@@ -263,19 +262,13 @@ class FrontPanelSettings(object):
                 with h5py.File(current_file,'r+') as hdf5_file:
                     if hdf5_file['/'].get('front_panel') is not None:
                         # Create a dialog to ask whether we can overwrite!
-                        overwrite = False
                         if not silent:
-                            message = QMessageBox()
-                            message.setText("This file '%s' already contains a connection table."%current_file)
-                            message.setInformativeText("Do you wish to replace the existing front panel configuration in this file?")
-                            message.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-                            message.setDefaultButton(QMessageBox.No)
-                            message.setIcon(QMessageBox.Question)
-                            message.setWindowTitle("BLACS")
-                            resp = message.exec()
-
-                            if resp == QMessageBox.Yes :
-                                overwrite = True
+                            overwrite = self.blacs.question_dialog(
+                                "This file '%s' already contains a connection table.\n\n"
+                                "Do you wish to replace the existing front panel configuration "
+                                "in this file?" % current_file,
+                                default_no=True,
+                            )
                         else:
                             overwrite = silent["overwrite"]
 
