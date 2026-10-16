@@ -454,7 +454,10 @@ class ShotExecutor(object):
                 repeat_number = h5_file.attrs.get('run repeat', 0)
             handle, temp_path = tempfile.mkstemp(prefix='BLACS-temp-', suffix='.h5')
             os.close(handle)
-            self.clean_h5_file(path, temp_path, repeat_number=repeat_number)
+            if not self.clean_h5_file(path, temp_path, repeat_number=repeat_number):
+                # Never move a copy that was not written over the shot.
+                os.remove(temp_path)
+                raise RuntimeError('No clean copy of the shot file could be written.')
             try:
                 shutil.move(temp_path, path)
             except Exception:

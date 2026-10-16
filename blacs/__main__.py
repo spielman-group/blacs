@@ -15,7 +15,6 @@
 import labscript_utils.excepthook
 
 import ast
-
 import os
 from blacs import APPLICATION_NAME, BLACS_DIR, DESKTOP_APP_MODULE
 

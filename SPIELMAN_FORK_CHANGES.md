@@ -39,7 +39,7 @@ below instead of trying to preserve the old queue terminology.
 ### Saved-state key renames
 
 - HDF5 attr `queue_data` -> `shot_execution_data`
-- `window_data["_main_window"]["_queue"]` -> `window_data["_main_window"]["_shot_execution"]`
+- `window_data["_main_window"]["_queue"]` -> `window_data["_shot_execution"]`
 
 Legacy read compatibility is still required:
 
@@ -223,13 +223,15 @@ Use:
 
 and save it under:
 
-- `window_data["_main_window"]["_shot_execution"]`
+- `window_data["_shot_execution"]`, beside `window_data["geometry"]`, the
+  shared `geometry_save_data()`
 
 #### `store_front_panel_in_h5(...)`
 
 Parameter changed:
 
-- `save_queue_data` -> `save_shot_execution_data`
+- `save_queue_data` -> `shot_file`, inverted: `shot_file=True`, from the shot
+  loop, writes neither `window_geometry` nor `shot_execution_data`
 
 Attribute written changed:
 
