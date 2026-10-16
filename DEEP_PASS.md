@@ -45,3 +45,161 @@ With P1 to P5, lyse taking plugins is a `PluginManager` in a `lyse/plugins`
 package plus one `fire_event('analysis_complete', ...)` where analysis ends; the
 labscript-agents plugin then lives in labscript-agents, registered as an entry
 point.
+
+## Step 1: contract
+
+What each existing test protects. Marks: **keep**; **fix** (the behaviour is
+real, but the test needs changing: it uses a stand-in for runmanager where the
+integration fixture's real runmanager can run, or another test is folded into
+it); **cut**, with the reason.
+
+Rule 13's tenth: tests are 2,557 lines against 7,414 lines of code (34%). With
+these marks they come to about 1,250 lines (17%). The tenth is not reached
+without cutting the integration fixture, which is what makes the rest real.
+
+### Totals
+
+- Test files: 7, plus `fixtures.py` and `conftest.py`. Tests: 68, with 20
+  subtests.
+- Marks, per test: keep 12, fix 8, cut 48. Where two tests become one, the second counts as cut.
+
+### tests/test_integration.py
+
+A real runmanager and a real BLACS shot loop, talking through their real servers.
+- `test_a_queued_shot_runs_is_removed_and_the_next_one_is_offered`: queued shots
+  run in order, leave the queue, reach lyse, and are shown running. **keep**.
+- `test_the_completed_shot_is_retired_before_the_next_one_is_chosen`: no shot is
+  handed out twice. **cut**: the test above asserts the same run list.
+- `test_a_lost_offer_reply_costs_a_pass_and_not_the_shot`: a lost reply re-offers
+  the row, which runs once. **keep**.
+- `test_an_aborted_shot_stops_requests_stays_red_and_is_retried`: an abort stops
+  requests, the row stays red with the reason, and a retry runs it. **fix**: fold in
+  the status-pull check of `test_the_status_pull_carries_the_reason_blacs_stopped`.
+- `test_blacs_reports_it_and_carries_on`: a shot BLACS cannot read is held as
+  rejected and BLACS keeps asking. **keep**.
+- `test_deleting_the_row_lets_the_queue_go_on`: runmanager's row deletion.
+  **cut**: runmanager's behaviour, for runmanager's tests.
+- `test_runmanager_says_what_blacs_reported`: runmanager's output-box text.
+  **cut**: message text; the tooltip check above carries the reason.
+- `test_a_paused_queue_leaves_blacs_running_its_own_shot`: a paused queue leaves
+  BLACS on its local override shot. **fix**: fold in the next test's
+  checks, an unreachable runmanager as a second case (from `NoShotOfferedTests`),
+  and the light's "Runmanager queue paused".
+- `test_a_local_override_shot_reaches_neither_runmanager_nor_lyse`: the override
+  shot is neither reported nor analysed. **cut**: folded into the test above.
+- `test_the_status_pull_follows_the_shot_blacs_is_running`: runmanager's status
+  pull names the running shot, then shows requesting. **keep**.
+- `test_a_blacs_that_comes_back_answers_again`: a client reaches a restarted
+  server. **cut**: a zprocess fact.
+- `test_the_status_pull_carries_the_reason_blacs_stopped`: the status pull says
+  why BLACS stopped. **cut**: folded into the abort test.
+- `test_a_default_shot_is_a_visible_queue_row_and_reaches_lyse`: runmanager's
+  default shot. **cut**: to BLACS it is an ordinary queued shot; runmanager's tests.
+
+### tests/test_shot_execution.py
+
+The shot loop and its exchange, over a stand-in runmanager.
+- `StatusSnapshotTests`, four tests: the snapshot's fields, answered without the
+  GUI thread, cleared after a shot. **cut**: message shape; the integration status
+  pull runs on the server thread while the loop holds the main one.
+- `SnapshotDuringCompletionTests`, three tests: the id stays while
+  `shot_complete` handlers run. **cut**: bug history; the status is one
+  `PublishedStatus`, written in one place.
+- `test_a_reader_between_the_writes_never_sees_two_statuses_mixed`: the same,
+  through a `__setattr__` hook. **cut**: as above.
+- `test_a_held_outcome_is_delivered_when_the_loop_ends`: **cut**: covered by the
+  quit test below.
+- `test_it_is_delivered_even_when_the_loop_died_on_an_error`: **cut**: bug
+  history.
+- `test_an_outcome_that_cannot_be_delivered_names_its_shot`: **cut**: log text.
+- `test_a_quit_while_an_outcome_is_held_waits_for_it_to_be_delivered`: quitting
+  waits until the last shot's outcome reaches runmanager. **fix**: over the
+  integration fixture's runmanager.
+- `test_quitting_is_not_delayed_when_there_is_nothing_to_deliver`: **cut**: the
+  next test bounds every quit.
+- `test_a_runmanager_that_never_answers_cannot_hold_the_quit_open`: a dead
+  runmanager cannot stop BLACS closing. **fix**: over the integration fixture,
+  with its reply stalled.
+- `test_an_outcome_that_could_not_be_delivered_is_named_before_the_exit`:
+  **cut**: log text.
+- `test_request_shots_is_not_part_of_saved_state`: **cut**: saved key names; the
+  next test covers the behaviour.
+- `test_restoring_saved_state_never_starts_requesting_shots`: BLACS never starts
+  requesting shots by itself at start-up. **keep**.
+- `ExchangeTests`: `reports_the_finished_shot_and_takes_the_next_one`,
+  `is_not_reported_again` and `only_a_shot_runmanager_offered_has_an_outcome_to_report`
+  are **cut**: the integration tests cover them. `only_runmanager_saying_it_is_paused_makes_it_paused`
+  is **cut**: response shape; the light test covers what a user sees.
+  `an_outcome_that_did_not_get_through_rides_on_the_next_exchange`: an outcome
+  survives an unreachable runmanager. **fix**: over the integration fixture, its
+  server down for one pass.
+- `LivenessProbeTests`, four tests: the probe's timeout, its configuration, and
+  its answer. **cut**: configuration plumbing, through a stand-in client.
+- `test_requesting_shots_asks_runmanager_for_work`: **cut**: every integration test.
+- `test_not_requesting_shots_makes_no_exchange_at_all` and
+  `test_no_shot_is_taken_up_while_not_requesting_shots`: with Request shots off,
+  nothing runs and nothing is asked. **fix**: one test over the integration
+  fixture, with the light's "Not requesting shots" from
+  `test_whatever_was_on_screen_gives_way_to_not_requesting_shots`.
+- `test_the_last_outcome_still_goes_out_after_requests_are_switched_off`: turning
+  requests off after a shot still reports it. **fix**: over the integration fixture.
+- `NoShotOfferedTests`, three tests: BLACS keeps requesting, falls back to its
+  override shot, and the light says why. **cut**: folded into the paused-queue test.
+- `test_a_completed_fallback_shot_is_not_reported_to_runmanager`: **cut**:
+  covered by the paused-queue test.
+- `test_each_fallback_repetition_gets_a_file_of_its_own`: override reruns never
+  write over data. **keep**.
+- `test_a_rerun_copy_is_the_same_shot_without_the_previous_data`: a rerun copy
+  keeps the shot's attributes and drops its data. **keep**.
+- `test_repetitions_of_one_shot_differ_only_in_the_repeat_number`: **cut**: the
+  test above.
+- `test_a_failed_shot_is_reset_for_another_go_at_the_same_run`: a failed shot is
+  reset in place, keeping its repeat number. **keep**.
+- `test_a_shot_blacs_cannot_read_is_reported_without_stopping`: **cut**: the
+  integration rejected-shot test.
+- `test_requesting_shots_again_clears_the_error_and_asks_for_work`: **cut**: the
+  integration abort test's retry.
+- `test_a_local_override_shot_that_cannot_run_stops_requests_silently`: an
+  override shot that cannot run stops requests and says so. **fix**: over the
+  integration fixture.
+- `test_a_shot_loop_that_dies_stops_requests_and_says_why`: an internal error
+  stops requests and shows why. **keep**.
+- `test_whatever_was_on_screen_gives_way_to_not_requesting_shots`: **cut**: folded
+  into the requests-off test.
+- `test_a_reason_requests_stopped_is_not_written_over`: **cut**: the abort test
+  reads the reason after later passes.
+
+### tests/test_architecture.py
+
+- `test_blacs_offers_runmanager_nothing_that_changes_it`: the server's
+  `handle_` names. **cut**: attribute names. Ian decides, as it guards a design rule.
+
+### tests/test_status_server.py
+
+- `test_a_status_request_gets_what_blacs_is_doing`: **cut**: the integration
+  status pull, with the real executor.
+
+### tests/test_theme_events.py
+
+- `test_a_palette_change_is_handled`: a light/dark switch recolours the tab
+  headers. **keep**.
+- `test_a_style_change_is_handled`: **cut**: the same handler.
+- `test_application_palette_change_never_reaches_the_window`: **cut**: a Qt fact.
+
+### tests/test_front_panel_settings.py
+
+Both go with the front-panel move onto the application configuration.
+- `test_the_front_panel_can_be_written_and_read_back`: saved channel values and
+  tab placement read back. **keep** until then.
+- `test_the_saved_strings_are_bytes_as_earlier_versions_wrote_them`: **cut**:
+  the numpy 2 dtype rename.
+
+### tests/test_main_window_layout.py
+
+- `test_the_device_tabs_get_the_rest_of_the_window`: resizing gives the space to
+  the device tabs, and the shot controls stay their size. **keep**.
+- `test_the_window_loads_with_the_controls_blacs_reaches_for`: **cut**:
+  widget names; a real start reaches them.
+- `test_the_shot_controls_are_not_in_a_splitter`: **cut**: structure; the
+  keep above covers what an operator sees.
+- `test_the_shot_controls_take_the_height_they_need_and_no_more`: **cut**: as above.
