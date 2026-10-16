@@ -459,3 +459,21 @@ All of it goes, about 25 lines: `__main__.py:115`, `:177`, `:183`, `:450-451`;
 | P1 | `docs/source/plugins.rst` says plugins reach "the shot queue" | Say the shot executor (do) |
 | P2 | `SPIELMAN_FORK_CHANGES.md`, at the root: the guide to merging upstream into the fork | Ian decides: keep it as the fork's merge guide, or move it into `docs/` |
 | P3 | `docs/How to add a new device/` (`main.tex`, `main.pdf`): upstream's device guide | Keep: upstream's documentation |
+
+## Step 2.6: style
+
+Done on `shot_execution.py` first (`f5131f8`), then on the rest of blacs and its
+tests (`7d883fa`). Comments were cut to their reason, internal docstrings
+trimmed, and the device-tab API documented. The rest is plain classes,
+zero-argument `super()`, f-strings outside logging calls, unused imports and
+banner paths. Each file's AST, docstrings aside, differs only in those forms.
+Four small faults found on the way are fixed (`9fcff02`). The review found
+the docstrings it corrected, and a startup crash from step 2.5's restore warning
+(`f1a1da7`): a saved connection table that differed from the lab's stopped
+BLACS starting. Both are fixed in `094adcd`.
+
+Checked: the suite, the offscreen plugin wiring and window checks, and the
+restore of a front panel whose saved table differs. Left as they are: `os.path`,
+Qt enum spelling (with the redundant PySide branches in the connection table's
+sort-order helpers), and two `%` halves in `Tab.mainloop`, whose escaped HTML
+cannot go in an f-string under Python 3.11.
