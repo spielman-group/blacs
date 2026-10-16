@@ -327,3 +327,31 @@ coordinator.
   `# LEGACY HDF5 FRONT PANEL COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.`,
   and a `warnings.warn(..., FutureWarning)` when the old file is actually read,
   saying it will be converted to TOML.
+
+## Step 2.1: behaviour no one asked for
+
+Compared file by file, `CodeHealth` against `master`. The fork's shot
+execution (`shot_execution.py`, `client.py`, the status server, the runmanager
+light and the liveness timeout) is the design that `docs/source/shot-management.rst`
+states, which Ian agreed as the contract of record, so what it states was asked
+for. The other changes are renames, the suite's shared plumbing (`file_dialogs`,
+`ThemedWindow`, `ensure_str`, `best_contrast`, `package_version`), and upstream
+code taken out on Ian's branches (BLACS's queue, analysis submission, the
+easter egg).
+
+### Candidates
+
+| # | Behaviour | Where | Evidence | Proposal |
+| --- | --- | --- | --- | --- |
+| A1 | Every start warns that a plugin's `get_tab_classes()`/`tabs_created()` are deprecated | `__main__.py`, plugin tabs | Added with the plugin extraction (`6053911`); upstream has the hooks and no warning; Ian keeps the hooks (P7) | Delete the warning (−8) |
+
+### Not candidates
+
+- The local override shot, `rejected` against `failed`, the liveness timeout,
+  the final outcome at quit and its warning, the status snapshot, Request shots
+  starting off: all stated in `shot-management.rst`.
+- The runmanager light: `LinkCheck`, Ian's.
+- An unreachable runmanager is logged once until it answers again
+  (`runmanager_rpc`): without it an outage writes a warning every pass.
+- The legacy `queue_data` key and the leftover `blacs/measure_ball/` files are
+  step 4's.
