@@ -53,8 +53,8 @@ point.
 - **P2**, **P3**, **P6** yes.
 - **P4** yes. With P6, hyde's session is briefed to move onto `fire_event` and
   drop `NullConfig` on hyde's `CodeHealth`.
-- **P5** studied first, below; one mechanism in labscript-utils, used by every
-  plugin.
+- **P5** studied, then decided, below: one mechanism in labscript-utils, used by
+  every plugin.
 - **P7** kept.
 - P1 to P4 land as one change with labscript-utils' owner, after Ian's decision
   on P5.
@@ -73,32 +73,38 @@ What exists:
 hyde's `get_session_restore_source()` is Python replayed in its kernel, not GUI
 state; it stays hyde's. `labscript_utils.settings` has no user but blacs.
 
-Proposal: the plugin says what, and the application says where.
+Decided by Ian: the plugin says what, and the application says where.
 
-- `BasePlugin.get_save_data()` returns a dict TOML can hold (so no `None`),
-  and `BasePlugin.restore_save_data(data)` takes it back. `BasePlugin.__init__`
-  passes its `initial_settings` to `restore_save_data`, so a plugin written to
-  the old constructor still works.
+- Every plugin, blacs's and hyde's, saves and restores through
+  `BasePlugin.get_save_data()` and `BasePlugin.restore_save_data(data)`, and
+  nothing else. No plugin outside the suite uses the old hooks, so there is no
+  compatibility path: `Plugin(initial_settings)` and its forwarding go.
 - `PluginManager.get_save_data()` returns `{plugin name: data}`, logging a plugin
   that raises. `PluginManager.restore_save_data(saved)` hands each plugin its own
-  part, for a configuration or project loaded while the application runs.
+  part, at start-up and for a configuration or project loaded while the
+  application runs.
 - `Settings` keeps its pages' data in a dict that the application saves and
   loads, in place of its own HDF5 file; `get_save_data()` returns
   `{page name: data}`.
-- The application stores the two under its own keys, `plugins` and `settings`.
-  In blacs that is the TOML configuration of the front-panel move, with the
-  legacy read of the old HDF5 file. In hyde it is `session.toml`, namespaced by
-  plugin, which changes that file's layout: hyde decides how an older
-  `session.toml` is read.
+- Saved data is whatever TOML can hold, as in every application's configuration:
+  a blacs plugin that saves `None` today leaves that key out instead.
+- blacs stores the two under `plugins` and `settings` in its one TOML
+  configuration, `blacs.toml` in the labconfig's `app_saved_configs/blacs` folder,
+  found by `get_default_appconfig_file` as lyse's and runmanager's are. The old
+  `<host>_BLACS.h5` there is read only at a first start that finds no TOML (see
+  "Settled inputs").
+- hyde's plugins override the two `BasePlugin` methods, calling `super()` first
+  for the base GUI state, and hyde decides where its session stores them. hyde's
+  session is briefed when this lands.
 
 | Who | Change | Size |
 | --- | --- | --- |
-| labscript-utils | the two `BasePlugin` hooks, the two manager methods | +30 |
+| labscript-utils | the two `BasePlugin` hooks, the two manager methods, `Plugin()` built with no settings | +25 |
 | labscript-utils | `Settings` stores a dict; its HDF5 storage goes | −45 +15 |
-| blacs | plugins implement `restore_save_data`; `front_panel_settings.py` stops looping over plugins; the `eval()` of saved plugin data goes. Part of the front-panel move | about −20 |
-| hyde | `get_session_toml_data` becomes `get_save_data`, its restore uses `restore_save_data`, and `session.toml` is namespaced | about ±40, hyde's session |
+| blacs | every plugin implements the two hooks; `front_panel_settings.py` stops looping over plugins; the `eval()` of saved plugin data goes. Part of the front-panel move | about −20 |
+| hyde | its plugins override the two hooks; `get_session_toml_data` goes | about ±40, hyde's session |
 
-For Ian: a settings page is now written to its file the moment its dialog
+Open with Ian: a settings page is now written to its file the moment its dialog
 closes. In a `LabscriptGuiApplication` it would be saved with the
 configuration, so on Save, or through the prompt on quitting, as lyse and
 runmanager save everything else.
