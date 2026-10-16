@@ -819,7 +819,7 @@ if __name__ == '__main__':
         def initialise_GUI(self):
             do_prop = {}
             for i in range(1):
-                do_prop['port0/line%d'] = {}
+                do_prop[f'port0/line{i}'] = {}
             self.create_digital_outputs(do_prop)
                 
             ao_prop = {}

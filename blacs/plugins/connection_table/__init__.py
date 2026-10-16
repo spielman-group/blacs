@@ -285,16 +285,6 @@ class Setting:
         return ui,None
     
     def global_sort_indicator_changed(self):
-        if 'PySide' in sys.modules.copy():
-            if self.views['globals'].header().sortIndicatorOrder() == Qt.SortOrder.AscendingOrder:
-                order = 'ASC'
-            else:
-                order = 'DESC'
-        else:
-            if self.views['globals'].header().sortIndicatorOrder() == Qt.AscendingOrder:
-                order = 'ASC'
-            else:
-                order = 'DESC'
         self.data['globals_sort_order'] = self.enum_to_order(self.views['globals'].header().sortIndicatorOrder())
         
     def calibrations_sort_indicator_changed(self):

@@ -140,7 +140,7 @@ class AO:
             if self._calibration and unit in self._calibration.derived_units:
                 return getattr(self._calibration,unit+"_from_base")(value)
         
-            raise RuntimeError(f'The value {value} ({unit}) could not be converted to base units because the hardware channel {self._hardware_name}, named {self._connection_name}, either does not have a unit conversion class or the unit specified was invalid')
+            raise RuntimeError(f'The value {value} ({unit}) could not be converted from base units because the hardware channel {self._hardware_name}, named {self._connection_name}, either does not have a unit conversion class or the unit specified was invalid')
         else:
             return value
             

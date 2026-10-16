@@ -691,7 +691,6 @@ class Tab:
         else:
             self.not_responding_for = time.time() - self._time_of_last_state_change
         if self.not_responding_for > 5 + self.hide_not_responding_error_until:
-            self.hide_not_responding_error_for = 0
             self._ui.notresponding.show()
             hours, remainder = divmod(int(self.not_responding_for), 3600)
             minutes, seconds = divmod(remainder, 60)
