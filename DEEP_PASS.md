@@ -329,3 +329,29 @@ easter egg).
   (`runmanager_rpc`): without it an outage writes a warning every pass.
 - The legacy `queue_data` key and the leftover `blacs/measure_ball/` files are
   step 4's.
+
+## Step 2.2: duplication
+
+lyse, runmanager and runviewer are `LabscriptGuiApplication`s and run
+`exec_qapplication`. BLACS is a plain `LabscriptApplication`, and does several
+of the same jobs by hand. Searched with the librarian's inventory and
+capability index, and by grep in every repo.
+
+### Candidates
+
+| # | Job | Should it exist? | Copies | Proposal | Size |
+| --- | --- | --- | --- | --- | --- |
+| D1 | Saving and restoring the main window's place and its splitters | Yes | `BLACS.restore_window` and the window data in `FrontPanelSettings.get_save_data`, measuring the frame by hand (its own comment calls the result unreliable); `LabscriptGuiApplication.geometry_save_data` and `restore_geometry`, which skip a restore once the screens have changed | BLACS becomes a `LabscriptGuiApplication` and uses the shared pair, still storing the result in its HDF5 file. An older file's window place is not restored, once. Restoring a maximised window goes, as the shared pair has no such case | blacs −35 +10 |
+| D2 | A warning or a Yes/No question in a box | Yes | Eight boxes built by hand in `__main__.py` and `front_panel_settings.py`; `LabscriptGuiApplication.error_dialog` and `question_dialog` | With D1, the shared pair. The front-panel overwrite question would lose its default of No | blacs −45 +15 |
+| D3 | A temporary file name | No: the standard library has it | `tempfilename` in `shot_execution.py`, upstream's | `tempfile.mkstemp` in `reset_failed_shot_file` | blacs −6 +2 |
+| D4 | The TOML path of a legacy HDF5 globals file | Yes, while saved lists may still name `.h5` files | The connection table plugin's `normalize_globals_path`; `runmanager.globals_file.default_toml_path` | The plugin calls runmanager's | blacs −2 |
+| D5 | An application's saved-config path in `app_saved_configs/<app>` | Yes | BLACS's start-up builds it by hand; `labscript_utils.labconfig.get_default_appconfig_file` | Use the shared function; the path is unchanged | blacs −3 +1 |
+
+### Not candidates
+
+- `exec_qapplication`: its Ctrl-C ends the event loop without BLACS's close
+  sequence, which saves the front panel and shuts down the workers.
+- Save and Load front panel against the shared configuration handlers: BLACS
+  keeps its HDF5 save files (Ian).
+- `CompileAndRestart` already uses the shared `OutputBox` and runmanager's
+  compile. `runmanager_rpc` and the notifications have no second copy.
