@@ -378,3 +378,34 @@ shot loop's thread, start-up restore, a dialog cancelled) are not candidates.
   compatibility leftover, for step 4.
 - The connection table plugin's `settings_changed` handler, which reads its
   notification only once setup is complete: nothing fires before then.
+
+## Step 2.4: dead code and compatibility leftovers
+
+Every function, method and class blacs defines was counted across every
+repo's checked-out branch (`.py`, `.ui`, `.rst`, `.md`, `.toml`, `.json`), hyde
+and zprocess included; four appear nowhere but their own definition.
+
+### Candidates
+
+| # | What | Evidence | Proposal | Size |
+| --- | --- | --- | --- | --- |
+| K1 | `blacs/measure_ball/`: the Measure Ball game's seven files (`RabiBall.exe`, a DLL, its data, sound and splash) | The button that ran it was removed (`3b18ec7`); nothing refers to the folder | Delete the folder | −7 files, 6.6 MB |
+| K2 | `CompileAndRestart.on_activate_default` | Upstream's GTK leftover: it calls `get_sensitive()`, a GTK method, and nothing connects it | Delete | −6 |
+| K3 | `Notifications.close_all` | Upstream's, never called; it calls `close()` on the notification classes rather than their instances | Delete | −7 |
+| K4 | `Tab.statemachine_timeout_remove_all` | Upstream's device-tab method, called by no tab in any repo | Delete. A lab's own device tab outside the repos that calls it would break | −10 |
+| K5 | `FrontPanelSettings.restore`'s "legacy restore from GTK save data" (`AO`, `DO`, `DDS` datasets) | Front panels saved by the GTK BLACS, from before 2013 | Delete | −13 |
+| K6 | `_restore_shot_execution_data`'s `queue_data` key, and its `NameError` catch for saves from before qtutils 2 | `queue_data` is what Production's BLACS writes; the fork writes `shot_execution_data` | Delete, and read `shot_execution_data` only. A settings file last saved by Production's BLACS then loses its local override path and last shots folder, once | −12 |
+
+`PluginTab` is unused too, but it is what the plugin tab hooks use, which Ian
+keeps (P7).
+
+### Branches
+
+| Branch | Content | Proposal |
+| --- | --- | --- |
+| `RunmanagerControl` | All of it is in `Development`, none in `Production`. Kept by a note so that `Production` could take it as a merge of its own | Delete: `Production` takes `Development` as a whole |
+| `LivenessTimeout` | All of it is in `Development`. Kept by Ian's note, to follow `RunmanagerControl` to `Production` | Delete with `RunmanagerControl`, or keep both |
+| `ServerInterfaces` | All of it is in `Development`. Kept live for the rule-13 test pass, which this pass's contract has now done | Delete |
+| `PluginRefactor` | Three commits not in `Development`: two merges, and `57bb71b`, which CODEX says must never be merged. This pass's plugin change supersedes it | Delete |
+| `RunmanagerTOMLGlobals` | Three merge commits not in `Development`, whose content is | Delete |
+| `spielman_retired/share` | Reference only, in five repos | Left to the coordinator, as one decision for all five |
