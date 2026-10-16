@@ -109,6 +109,49 @@ closes. In a `LabscriptGuiApplication` it would be saved with the
 configuration, so on Save, or through the prompt on quitting, as lyse and
 runmanager save everything else.
 
+### The plugin change: API
+
+labscript-utils, `labscript_utils/plugins.py`, by its owner:
+
+- `BasePlugin()` takes no arguments. Its no-op hooks: `get_event_handlers()`
+  returns `{}`, `get_ui_contributions()` and `get_menu_contributions()` `[]`,
+  `get_services()` `{}`, `get_save_data()` `{}`; `restore_save_data(data)` and
+  `close()` do nothing. `plugin_setup_complete(data)` stays optional.
+- `PluginManager(plugin_package, plugins_dir, config=None, config_section=None,
+  default_plugins=(), logger=None, entry_point_group=None)`.
+  - `discover_modules()` finds the folders in `plugins_dir`, then the
+    `importlib.metadata` entry points in `entry_point_group`, each naming a
+    module, the entry point's name being the plugin's. With `config=None` every
+    plugin found loads; otherwise both kinds obey the enable flags as now.
+  - `instantiate_plugins()` builds `module.Plugin()`, with no settings.
+  - `fire_event(name, *args, **kwargs)` calls the handlers
+    `get_event_handlers(name)` returns, in priority order, logs one that raises
+    and goes on, and returns their results in a list.
+  - `get_save_data()` returns `{plugin name: data}`, leaving out a plugin that
+    returns nothing or raises (logged). `restore_save_data(saved)` gives each
+    plugin `saved.get(name, {})`, logging one that raises.
+  - `setup_plugins()` and `MenuBuilder` go. `get_event_handlers`,
+    `register_context`, `setup_contexts`, `collect_services`, `setup_complete`
+    and `close_plugins` stay.
+- `MenuContext(logger=None, icon_factory=None)`: a contribution's `icon` is set
+  on its action as `icon_factory(icon)`.
+
+With the front-panel move, after Ian's answers on it:
+`labscript_utils.settings.Settings(saved_data=None, parent=None, page_classes=())`
+builds each page from `saved_data.get(page name, {})`, keeps a page's `save()`
+when the dialog is accepted, and returns `{page name: data}` from
+`get_save_data()`; its HDF5 storage goes.
+
+blacs, by its owner: the plugins inherit `BasePlugin`, contribute menus,
+settings pages and notifications to contexts that `__main__.py` registers
+(`menus`, a `MenuContext` on the menu bar; `settings`; `notifications`), fire
+events with `fire_event`, and save through the manager.
+
+hyde, by its session, in the same round, since `Plugin()` loses its argument:
+`HydePlugin` and its plugins take no constructor settings, fire events with
+`fire_event`, pass `config=None` in place of `NullConfig`, and override
+`get_save_data` and `restore_save_data`, calling `super()` first.
+
 ## Step 1: contract
 
 What each existing test protects. Marks: **keep**; **fix** (the behaviour is
