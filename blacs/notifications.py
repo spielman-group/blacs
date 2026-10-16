@@ -28,7 +28,9 @@ class Notifications(object):
         self._hidden_callbacks = {}
         self._shown_callbacks = {}
         
-    def add_notification(self, notification_class):
+    def add(self, plugin_name, contribution, data):
+        """Add a plugin's notification, as the 'notifications' plugin context."""
+        notification_class = contribution['notification']
         if notification_class in self._notifications:
             return False        
         

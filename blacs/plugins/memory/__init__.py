@@ -14,6 +14,7 @@ import os
 import logging
 import gc
 from blacs import BLACS_DIR
+from blacs.plugins import BasePlugin
 from labscript_utils import memprof
 
 FILEPATH_COLUMN = 0
@@ -21,60 +22,17 @@ name = "Memory Profile"
 module = "memory" # should be folder name
 logger = logging.getLogger('BLACS.plugin.%s'%module)
 
-class Plugin(object):
-    def __init__(self,initial_settings):
-        self.menu = None
-        self.notifications = {}
-        self.initial_settings = initial_settings
-        self.BLACS = None
-        
-    def get_menu_class(self):
-        return Menu
-        
-    def get_notification_classes(self):
-        return []
-        
-    def get_setting_classes(self):
-        return []
-        
-    def get_event_handlers(self):
-        {}
-        
-    def set_menu_instance(self,menu):
-        self.menu = menu
-        
-    def set_notification_instances(self,notifications):
-        pass
-        
+class Plugin(BasePlugin):
     def plugin_setup_complete(self, BLACS):
-        self.BLACS = BLACS
-        
-    def get_save_data(self):
-        return {}
-    
-    def close(self):
-        pass
+        memprof.start(filepath=os.path.join(BLACS_DIR, 'memprof.txt'))
 
-class Menu(object):
-    def __init__(self,BLACS):
-        self.BLACS = BLACS
-        self.close_notification_func = None
-        memprof.start(filepath=os.path.join(BLACS_DIR, 'memprof.txt'))        
-        
-    def get_menu_items(self):
-        return {'name':name,        
-                'menu_items':[{'name':'Garbage collect',
-                               'action':gc.collect,
-                               'icon': ':/qtutils/fugue/memory'
-                              },
-                              {'name':'Reset profiler',
-                               'action':memprof.start,
-                               'icon': ':/qtutils/fugue/counter-reset'
-                              },
-                              {'name':'Diff memory usage',
-                               'action':memprof.check,
-                               'icon': ':/qtutils/fugue/tables'
-                              }
-                             ]                                
-               }
-    
+    def get_menu_contributions(self):
+        return [
+            {'location': 'menubar', 'path': name, 'order': order, 'name': text,
+             'action': action, 'icon': icon}
+            for order, (text, action, icon) in enumerate([
+                ('Garbage collect', gc.collect, ':/qtutils/fugue/memory'),
+                ('Reset profiler', memprof.start, ':/qtutils/fugue/counter-reset'),
+                ('Diff memory usage', memprof.check, ':/qtutils/fugue/tables'),
+            ])
+        ]

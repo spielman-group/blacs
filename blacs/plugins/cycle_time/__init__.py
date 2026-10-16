@@ -24,7 +24,7 @@ import h5py
 from qtutils.qt.QtGui import QIcon
 from qtutils.qt.QtCore import QSize
 
-from blacs.plugins import PLUGINS_DIR, callback
+from blacs.plugins import PLUGINS_DIR, BasePlugin, callback
 from labscript_utils.properties import get_attribute
 
 name = "cycle_time"
@@ -32,11 +32,8 @@ module = "cycle_time" # should be folder name
 logger = logging.getLogger('BLACS.plugin.%s'%module)
 
 
-class Plugin(object):
-    def __init__(self, initial_settings):
-        self.menu = None
-        self.notifications = {}
-        self.initial_settings = initial_settings
+class Plugin(BasePlugin):
+    def __init__(self):
         self.BLACS = None
         self.time_of_last_shot = None
         self.abort_queue = Queue()
@@ -49,9 +46,6 @@ class Plugin(object):
         self.BLACS = BLACS
         self.shot_executor = self.BLACS['shot_execution']
 
-    def get_save_data(self):
-        return {}
-    
     def get_event_handlers(self):
         return {
             'pre_transition_to_buffered': self.pre_transition_to_buffered,
@@ -116,24 +110,3 @@ class Plugin(object):
             self.shot_executor.set_status(previous_status, h5_filepath)
 
         self.time_of_last_shot = monotonic()
-
-    # The rest of these are boilerplate:
-    def close(self):
-        pass
-    
-    def get_menu_class(self):
-        return None
-        
-    def get_notification_classes(self):
-        return []
-        
-    def get_setting_classes(self):
-        return []
-    
-    def set_menu_instance(self, menu):
-        self.menu = menu
-        
-    def set_notification_instances(self, notifications):
-        self.notifications = notifications
-        
-    

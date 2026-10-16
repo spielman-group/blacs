@@ -21,7 +21,7 @@ from qtutils import UiLoader
 
 from labscript_utils.shared_drive import path_to_agnostic
 from labscript_utils.ls_zprocess import Lock
-from blacs.plugins import PLUGINS_DIR
+from blacs.plugins import PLUGINS_DIR, BasePlugin
 
 name = "Delete repeated shots"
 module = "delete_repeated_shots" # should be folder name
@@ -30,15 +30,12 @@ logger = logging.getLogger('BLACS.plugin.%s'%module)
 
 KEEP_ALL_SHOTS = 0
 
-class Plugin(object):
-    def __init__(self, initial_settings):
-        self.menu = None
-        self.notifications = {}
-        self.initial_settings = initial_settings
+class Plugin(BasePlugin):
+    def __init__(self):
         self.BLACS = None
         self.ui = None
-        self.n_shots_to_keep = initial_settings.get('n_shots_to_keep', KEEP_ALL_SHOTS)
-        self.delete_queue = initial_settings.get('delete_queue', [])
+        self.n_shots_to_keep = KEEP_ALL_SHOTS
+        self.delete_queue = []
         self.event_queue = Queue()
         self.delete_queue_lock = threading.Lock()
         self.mainloop_thread = threading.Thread(target=self.mainloop)
@@ -80,6 +77,10 @@ class Plugin(object):
     def get_save_data(self):
         return {'n_shots_to_keep': self.n_shots_to_keep,
                 'delete_queue': self.delete_queue}
+
+    def restore_save_data(self, data):
+        self.n_shots_to_keep = data.get('n_shots_to_keep', KEEP_ALL_SHOTS)
+        self.delete_queue = data.get('delete_queue', [])
     
     def get_event_handlers(self):
         return {'shot_complete': self.on_shot_complete}
@@ -134,21 +135,3 @@ class Plugin(object):
         self.event_queue.put('close')
         self.mainloop_thread.join()
 
-
-    # The rest of these are boilerplate:
-    def get_menu_class(self):
-        return None
-        
-    def get_notification_classes(self):
-        return []
-        
-    def get_setting_classes(self):
-        return []
-    
-    def set_menu_instance(self, menu):
-        self.menu = menu
-        
-    def set_notification_instances(self, notifications):
-        self.notifications = notifications
-        
-    

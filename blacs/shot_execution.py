@@ -774,11 +774,7 @@ class ShotExecutor(object):
                 ##########################################################################################################################################
                 #                                                        Plugin callbacks                                                                #
                 ########################################################################################################################################## 
-                for callback in plugins.manager.get_event_handlers('pre_transition_to_buffered'):
-                    try:
-                        callback(path)
-                    except Exception:
-                        logger.exception("Plugin callback raised an exception")
+                plugins.manager.fire_event('pre_transition_to_buffered', path)
 
                 start_time = time.time()
                 
@@ -932,11 +928,7 @@ class ShotExecutor(object):
                 ##########################################################################################################################################
                 #                                                        Plugin callbacks                                                                #
                 ########################################################################################################################################## 
-                for callback in plugins.manager.get_event_handlers('science_starting'):
-                    try:
-                        callback(path)
-                    except Exception:
-                        logger.exception("Plugin callback raised an exception")
+                plugins.manager.fire_event('science_starting', path)
 
                 #TODO: fix potential race condition if BLACS is closing when this line executes?
                 self.BLACS.tablist[self.master_pseudoclock].start_run(
@@ -1029,11 +1021,7 @@ class ShotExecutor(object):
                 ##########################################################################################################################################
                 #                                                        Plugin callbacks                                                                #
                 ########################################################################################################################################## 
-                for callback in plugins.manager.get_event_handlers('science_over'):
-                    try:
-                        callback(path)
-                    except Exception:
-                        logger.exception("Plugin callback raised an exception")
+                plugins.manager.fire_event('science_over', path)
 
             
             ##########################################################################################################################################
@@ -1144,11 +1132,7 @@ class ShotExecutor(object):
             ##########################################################################################################################################
             #                                                        Plugin callbacks                                                                #
             ########################################################################################################################################## 
-            for callback in plugins.manager.get_event_handlers('shot_complete'):
-                try:
-                    callback(path)
-                except Exception:
-                    logger.exception("Plugin callback raised an exception")
+            plugins.manager.fire_event('shot_complete', path)
 
             ##########################################################################################################################################
             self.set_status("Idle")

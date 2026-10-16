@@ -39,5 +39,6 @@ manager = PluginManager(
     PLUGIN_CONFIG_SECTION,
     default_plugins,
     logger,
+    entry_point_group='blacs.plugins',
 )
 modules = manager.discover_modules()

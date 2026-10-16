@@ -22,6 +22,7 @@ from qtutils import inmain_decorator
 
 from labscript_utils.connections import ConnectionTable
 from labscript_utils import ensure_str
+import blacs.plugins as plugins
 
 logger = logging.getLogger('BLACS.FrontPanelSettings')
 
@@ -200,7 +201,6 @@ class FrontPanelSettings(object):
         tab_data = {}
         notebook_data = {}
         window_data = {}
-        plugin_data = {}
 
         # iterate over all tabs
         for device_name,tab in self.tablist.items():
@@ -224,12 +224,7 @@ class FrontPanelSettings(object):
 
             notebook_data[device_name] = {"notebook":current_notebook_name,"page":page, "visible":visible}
 
-        # iterate over all plugins
-        for module_name, plugin in self.blacs.plugins.items():
-            try:
-                plugin_data[module_name] = plugin.get_save_data()
-            except Exception as e:
-                logger.error('Could not save data for plugin %s. Error was: %s'%(module_name,str(e)))
+        plugin_data = plugins.manager.get_save_data()
 
         # save window data
         # Size of window

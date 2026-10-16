@@ -15,7 +15,7 @@ import os
 
 from qtutils import UiLoader
 
-from blacs.plugins import PLUGINS_DIR
+from blacs.plugins import PLUGINS_DIR, BasePlugin
 
 name = "GUI Theme"
 module = "theme" # should be folder name
@@ -111,22 +111,13 @@ def is_default_stylesheet(stylesheet):
     return no_whitespace(str(stylesheet)) == no_whitespace(DEFAULT_STYLESHEET) 
 
 
-class Plugin(object):
-    def __init__(self,initial_settings):
-        self.menu = None
-        self.notifications = {}
+class Plugin(BasePlugin):
+    def __init__(self):
         self.BLACS = None
-        self.initial_settings = initial_settings
-        
-    def get_menu_class(self):
-        return None
-        
-    def get_notification_classes(self):
-        return []
-        
-    def get_setting_classes(self):
-        return [Setting]
-        
+
+    def get_ui_contributions(self):
+        return [{'context': 'settings', 'page': Setting}]
+
     def get_event_handlers(self):
         return {'settings_changed':self.update_stylesheet}
         
@@ -138,24 +129,12 @@ class Plugin(object):
             stylesheet_settings = self.BLACS['settings'].get_value(Setting,"stylesheet")
             self.BLACS['ui'].centralwidget.setStyleSheet(self.unmodified_stylesheet + stylesheet_settings)
         
-    def set_menu_instance(self,menu):
-        self.menu = menu
-                
-    def set_notification_instances(self,notifications):
-        self.notifications = notifications
-        
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
         self.unmodified_stylesheet = self.BLACS['ui'].centralwidget.styleSheet()
         self.update_stylesheet()
-    
-    def get_save_data(self):
-        return {}
-    
-    def close(self):
-        pass
-        
-    
+
+
 class Setting(object):
     name = name
 

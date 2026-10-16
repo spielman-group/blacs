@@ -32,7 +32,7 @@ from labscript_utils import ensure_str
 from zprocess import TimeoutError
 from labscript_utils.ls_zprocess import Event
 from labscript_utils.qtwidgets.themed_window import best_contrast
-from blacs.plugins import PLUGINS_DIR, callback
+from blacs.plugins import PLUGINS_DIR, BasePlugin, callback
 
 name = "Progress Bar"
 module = "progress_bar" # should be folder name
@@ -44,11 +44,8 @@ UPDATE_INTERVAL = 0.02
 BAR_MAX = 1000
 
 
-class Plugin(object):
-    def __init__(self, initial_settings):
-        self.menu = None
-        self.notifications = {}
-        self.initial_settings = initial_settings
+class Plugin(BasePlugin):
+    def __init__(self):
         self.BLACS = None
         self.command_queue = Queue()
         self.master_pseudoclock = None
@@ -99,9 +96,6 @@ class Plugin(object):
         self.ui.wait_warning.hide()
         self.mainloop_thread.start()
 
-    def get_save_data(self):
-        return {}
-    
     def get_event_handlers(self):
         return {'science_over': self.on_science_over,
                 'science_starting': self.on_science_starting}
@@ -349,20 +343,3 @@ class Plugin(object):
         self.command_queue.put(('close', None))
         self.mainloop_thread.join()
 
-    # The rest of these are boilerplate:
-    def get_menu_class(self):
-        return None
-        
-    def get_notification_classes(self):
-        return []
-        
-    def get_setting_classes(self):
-        return []
-    
-    def set_menu_instance(self, menu):
-        self.menu = menu
-        
-    def set_notification_instances(self, notifications):
-        self.notifications = notifications
-        
-    

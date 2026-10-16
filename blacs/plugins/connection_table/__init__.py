@@ -22,45 +22,49 @@ from blacs.compile_and_restart import CompileAndRestart
 from labscript_utils.filewatcher import FileWatcher
 from labscript_utils.text_editor import open_in_editor
 from qtutils import inmain, UiLoader
-from blacs.plugins import PLUGINS_DIR, PLUGIN_CONFIG_SECTION
+from blacs.plugins import PLUGINS_DIR, PLUGIN_CONFIG_SECTION, BasePlugin
 
 FILEPATH_COLUMN = 0
 name = "Connection Table"
 module = "connection_table" # should be folder name
 logger = logging.getLogger('BLACS.plugin.%s'%module)
 
-class Plugin(object):
-    def __init__(self,initial_settings):
-        self.menu = None
+class Plugin(BasePlugin):
+    def __init__(self):
         self.notifications = {}
-        self.initial_settings = initial_settings
+        self.clean_modified_info = None
         self.BLACS = None
-        
-    def get_menu_class(self):
-        return Menu
-        
-    def get_notification_classes(self):
-        return [RecompileNotification, BrokenDevicesNotification]
 
-    def get_setting_classes(self):
-        return [Setting]
-        
+    def get_ui_contributions(self):
+        return [
+            {'context': 'settings', 'page': Setting},
+            {'context': 'notifications', 'notification': RecompileNotification},
+            {'context': 'notifications', 'notification': BrokenDevicesNotification},
+        ]
+
+    def get_menu_contributions(self):
+        return [
+            {'location': 'menubar', 'path': name, 'order': order, 'name': text,
+             'action': action, 'icon': icon}
+            for order, (text, action, icon) in enumerate([
+                ('Edit', self.on_edit_connection_table, ':/qtutils/fugue/document--pencil'),
+                ('Select Globals', self.on_select_globals, ':/qtutils/fugue/table--pencil'),
+                ('Recompile', self.on_recompile_connection_table, ':/qtutils/fugue/arrow-circle'),
+            ])
+        ]
+
     def get_event_handlers(self):
         return {'settings_changed':self.notifications[RecompileNotification].setup_filewatching}
 
-    def set_menu_instance(self,menu):
-        self.menu = menu
-        
-    def set_notification_instances(self,notifications):
-        self.notifications = notifications
-        
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
+        self.notifications = {
+            notification: BLACS['notifications'].get_instance(notification)
+            for notification in (RecompileNotification, BrokenDevicesNotification)
+        }
         # The 'clean' modified info. We don't save the 'dirty' modified info. If watched
         # files are 'dirty' then our callback will be immediately called.
-        clean_modified_info = self.initial_settings.get('clean_modified_info', None)
-        self.notifications[RecompileNotification].setup_filewatching(clean_modified_info)
-        self.menu.close_notification_func = self.notifications[RecompileNotification].on_restart
+        self.notifications[RecompileNotification].setup_filewatching(self.clean_modified_info)
         failed_devices = list(self.BLACS['shot_execution'].BLACS.failed_device_settings.keys())
         if failed_devices:
             self.notifications[RecompileNotification]._show()
@@ -70,32 +74,13 @@ class Plugin(object):
     def get_save_data(self):
         return self.notifications[RecompileNotification].get_save_data()
 
+    def restore_save_data(self, data):
+        self.clean_modified_info = data.get('clean_modified_info', None)
+
     def close(self):
         self.notifications[RecompileNotification].close()
         self.notifications[BrokenDevicesNotification].close()
 
-class Menu(object):
-    def __init__(self,BLACS):
-        self.BLACS = BLACS
-        self.close_notification_func = None
-        
-    def get_menu_items(self):
-        return {'name':name,        
-                'menu_items':[{'name':'Edit',
-                               'action':self.on_edit_connection_table,
-                               'icon': ':/qtutils/fugue/document--pencil'
-                              },
-                              {'name':'Select Globals',
-                               'action':self.on_select_globals,
-                               'icon': ':/qtutils/fugue/table--pencil'
-                              },
-                              {'name':'Recompile',
-                               'action':self.on_recompile_connection_table,
-                               'icon': ':/qtutils/fugue/arrow-circle'
-                              }
-                             ]                                
-               }
-    
     def on_select_globals(self,*args,**kwargs):
         self.BLACS['settings'].create_dialog(goto_page=Setting)
       
@@ -109,7 +94,7 @@ class Menu(object):
         logger.info('recompile connection table called')
         # get list of globals
         globals_files = self.BLACS['settings'].get_value(Setting,'globals_list')
-        CompileAndRestart(self.BLACS, globals_files, self.BLACS['exp_config'].get('paths','connection_table_py'), self.BLACS['exp_config'].get('paths','connection_table_h5'),close_notification_func=self.close_notification_func)
+        CompileAndRestart(self.BLACS, globals_files, self.BLACS['exp_config'].get('paths','connection_table_py'), self.BLACS['exp_config'].get('paths','connection_table_h5'),close_notification_func=self.notifications[RecompileNotification].on_restart)
 
 
 class BrokenDevicesNotification(object):
@@ -165,7 +150,7 @@ class RecompileNotification(object):
         self._get_state = get_state
                 
     def on_recompile_connection_table(self,*args,**kwargs):
-        self.BLACS['plugins'][module].menu.on_recompile_connection_table()
+        self.BLACS['plugins'][module].on_recompile_connection_table()
         
     def callback(self, name, info, event=None):
         if event  == 'deleted':

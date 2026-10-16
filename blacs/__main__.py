@@ -100,7 +100,7 @@ import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
 # Lab config code
 from labscript_utils.labconfig import LabConfig, LabscriptApplication
-from labscript_utils.plugins import MenuBuilder
+from labscript_utils.plugins import MenuContext
 from labscript_profile import hostname
 # Shot execution code
 from blacs.shot_execution import ShotExecutor
@@ -265,7 +265,8 @@ class BLACS(LabscriptApplication):
         logger.info('Instantiating plugins')
         # setup the plugin system
         plugin_settings = eval(tab_data['BLACS settings']['plugin_data']) if 'plugin_data' in tab_data['BLACS settings'] else {}
-        self.plugins = plugins.manager.instantiate_plugins(plugin_settings)
+        self.plugins = plugins.manager.instantiate_plugins()
+        plugins.manager.restore_save_data(plugin_settings)
 
         logger.info('creating plugin tabs')
         # setup the plugin tabs
@@ -325,27 +326,24 @@ class BLACS(LabscriptApplication):
                       'shot_execution':self.shot_executor
                      }
 
-        # setup the Notification system
-        logger.info('setting up notification system')
-        splash.update_text('setting up notification system')
+        splash.update_text('setting up notifications and preferences')
+        logger.info('setting up notifications and preferences')
         self.notifications = Notifications(blacs_data)
-
-        settings_pages, settings_callbacks = plugins.manager.setup_plugins(
-            blacs_data,
-            self.notifications,
-            MenuBuilder(QIcon),
-            self.ui.menubar,
+        self.settings = Settings(file=self.settings_path, parent=self.ui)
+        self.settings.register_callback(
+            lambda: plugins.manager.fire_event('settings_changed')
         )
-
-        # setup the BLACS preferences system
-        splash.update_text('setting up preferences system')
-        logger.info('setting up preferences system')
-        self.settings = Settings(file=self.settings_path, parent = self.ui, page_classes=settings_pages)
-        for callback in settings_callbacks:
-            self.settings.register_callback(callback)
-
-        # update the blacs_data dictionary with the settings system
+        blacs_data['notifications'] = self.notifications
         blacs_data['settings'] = self.settings
+
+        # Plugins add their menus, preferences pages and notifications here:
+        menus = MenuContext(logger=logger, icon_factory=QIcon)
+        menus.register_location('menubar', self.ui.menubar)
+        plugins.manager.register_context('menus', menus)
+        plugins.manager.register_context('settings', self.settings)
+        plugins.manager.register_context('notifications', self.notifications)
+        plugins.manager.setup_contexts(blacs_data)
+        menus.render()
 
         plugins.manager.setup_complete(blacs_data)
 

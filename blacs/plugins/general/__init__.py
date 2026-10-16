@@ -13,41 +13,12 @@
 import os
 
 from qtutils import UiLoader
-from blacs.plugins import PLUGINS_DIR
+from blacs.plugins import PLUGINS_DIR, BasePlugin
 
-class Plugin(object):
-    def __init__(self, initial_settings):
-        self.menu = None
-        self.notifications = {}
-        self.BLACS = None
-        
-    def get_menu_class(self):
-        return None
-        
-    def get_notification_classes(self):
-        return []
-        
-    def get_setting_classes(self):
-        return [Setting]
-        
-    def get_event_handlers(self):
-        pass
-        
-    def set_menu_instance(self,menu):
-        self.menu = menu
-        
-    def set_notification_instances(self,notifications):
-        self.notifications = notifications
+class Plugin(BasePlugin):
+    def get_ui_contributions(self):
+        return [{'context': 'settings', 'page': Setting}]
 
-    def plugin_setup_complete(self, BLACS):
-        self.BLACS = BLACS
-        
-    def get_save_data(self):
-        return {}
-        
-    def close(self):
-        pass
-        
 # class Menu(object):
     # pass
     
