@@ -69,8 +69,13 @@ class Plugin(BasePlugin):
                 'delete_queue': self.delete_queue}
 
     def restore_save_data(self, data):
-        self.n_shots_to_keep = data.get('n_shots_to_keep', KEEP_ALL_SHOTS)
-        self.delete_queue = data.get('delete_queue', [])
+        if self.ui is None:
+            self.n_shots_to_keep = data.get('n_shots_to_keep', KEEP_ALL_SHOTS)
+            self.delete_queue = data.get('delete_queue', [])
+        elif 'n_shots_to_keep' in data:
+            # A front panel loaded while BLACS runs sets the limit, but the queue
+            # stays this session's: the loaded one names another session's shots.
+            self.ui.spinBox.setValue(data['n_shots_to_keep'])
     
     def get_event_handlers(self):
         return {'shot_complete': self.on_shot_complete}

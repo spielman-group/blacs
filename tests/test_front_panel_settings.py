@@ -5,13 +5,20 @@ closeEvent keeps retrying the close and never reaches exit_complete.
 """
 import os
 import tempfile
+import types
 import unittest
 
 import labscript_utils.h5_lock  # must precede h5py, as it does in BLACS itself
 import h5py
 
+from qtutils.qt.QtWidgets import QApplication, QFrame, QVBoxLayout
+
 from blacs.front_panel_settings import FrontPanelSettings
+from blacs.plugins import delete_repeated_shots
 from labscript_utils import ensure_str
+
+# The plugin's widgets need an application, held for the life of the process.
+_qapplication = QApplication.instance() or QApplication([])
 
 
 def a_front_panel():
@@ -73,6 +80,22 @@ class SaveAndRestoreTests(unittest.TestCase):
         self.assertEqual(ensure_str(notebook[0]['tab_name']), 'fake_device')
         self.assertEqual(ensure_str(notebook[0]['notebook']), '1')
         self.assertEqual(eval(ensure_str(notebook[0]['data'])), {'a key': 'a value'})
+
+
+class LoadIntoRunningPluginTests(unittest.TestCase):
+    def test_a_loaded_front_panel_sets_the_running_repeated_shot_limit(self):
+        frame = QFrame()
+        frame.setLayout(QVBoxLayout())
+        plugin = delete_repeated_shots.Plugin()
+        self.addCleanup(plugin.close)
+        plugin.plugin_setup_complete({'ui': types.SimpleNamespace(shot_controls_frame=frame)})
+        plugin.delete_queue = ['this_session_rep1.h5']
+
+        plugin.restore_save_data({'n_shots_to_keep': 3, 'delete_queue': ['old_rep1.h5']})
+
+        self.assertEqual(plugin.ui.spinBox.value(), 3)
+        self.assertEqual(plugin.n_shots_to_keep, 3)
+        self.assertEqual(plugin.delete_queue, ['this_session_rep1.h5'])
 
 
 if __name__ == '__main__':

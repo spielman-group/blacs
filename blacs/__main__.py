@@ -221,9 +221,10 @@ class BLACS(LabscriptGuiApplication):
 
         splash.update_text('instantiating plugins')
         logger.info('Instantiating plugins')
-        plugin_settings = eval(tab_data['BLACS settings']['plugin_data']) if 'plugin_data' in tab_data['BLACS settings'] else {}
         self.plugins = plugins.manager.instantiate_plugins()
-        plugins.manager.restore_save_data(plugin_settings)
+        plugins.manager.restore_save_data(
+            ast.literal_eval(tab_data['BLACS settings'].get('plugin_data', '{}'))
+        )
 
         logger.info('creating plugin tabs')
         for module_name, plugin in self.plugins.items():
@@ -393,6 +394,9 @@ class BLACS(LabscriptGuiApplication):
 
                         self.shot_executor.restore_save_data(
                             self._restore_shot_execution_data(tab_data['BLACS settings'])
+                        )
+                        plugins.manager.restore_save_data(
+                            ast.literal_eval(tab_data['BLACS settings'].get('plugin_data', '{}'))
                         )
                 except Exception as e:
                     logger.exception("Unable to load the front panel in %s."%(filepath))
