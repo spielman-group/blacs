@@ -857,8 +857,12 @@ class ShotExecutor:
                         except Exception:
                             logger.exception('Exception while transitioning %s to manual mode.'%(name))
                             error_condition = True
+                    logged_waiting = None
                     while transition_list:
-                        logger.info('Waiting for the following devices to finish transitioning to manual mode: %s'%str(transition_list))
+                        # Logged when the list changes, not at each 2 s check.
+                        if set(transition_list) != logged_waiting:
+                            logged_waiting = set(transition_list)
+                            logger.info('Waiting for the following devices to finish transitioning to manual mode: %s'%str(transition_list))
                         try:
                             name, result = self.notify_queue.get(timeout=2)
                             if name == 'Shot Executor' and result == 'abort':
