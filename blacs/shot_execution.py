@@ -847,6 +847,9 @@ class ShotExecutor:
                 while stop_groups:
                     transition_list = {}
                     for name in stop_groups.pop(min(stop_groups)):
+                        if name in response_list:
+                            # Restarted while an earlier group was waited on.
+                            continue
                         tab = devices_in_use[name]
                         try:
                             tab.transition_to_manual(self.notify_queue)
@@ -890,7 +893,8 @@ class ShotExecutor:
                             logger.debug('%s finished transitioning to manual mode' % name)
                         tab = devices_in_use[name]
                         inmain(tab.disconnect_restart_receiver, restart_function)
-                        del transition_list[name]
+                        # Absent for a device of a later group that restarted.
+                        transition_list.pop(name, None)
                     
                 if error_condition:
                     reason = 'Device(s) reported an error after the run'
