@@ -857,7 +857,7 @@ class ShotExecutor:
                     while transition_list:
                         logger.info('Waiting for the following devices to finish transitioning to manual mode: %s'%str(transition_list))
                         try:
-                            name, result = self.notify_queue.get(2)
+                            name, result = self.notify_queue.get(timeout=2)
                             if name == 'Shot Executor' and result == 'abort':
                                 # Ignore abort signals left in the queue:
                                 # it is too late to abort.
@@ -869,7 +869,12 @@ class ShotExecutor:
                                 if self.get_device_error_state(name, transition_list):
                                     error_condition = True
                                     logger.debug('%s is in an error state' % name)
+                                    response_list[name] = 'error'
+                                    inmain(transition_list[name].disconnect_restart_receiver, restart_function)
                                     del transition_list[name]
+                            continue
+                        if name in response_list:
+                            # A device given up on above may still answer, too late.
                             continue
                         response_list[name] = result
                         if result == 'fail':
