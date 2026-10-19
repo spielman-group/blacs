@@ -162,7 +162,7 @@ class FrontPanelSettings:
         notebook_data = {}
 
         for device_name,tab in self.tablist.items():
-            tab_data[device_name] = {'front_panel':tab.settings['front_panel_settings'], 'save_data': tab.get_all_save_data()}
+            tab_data[device_name] = {'front_panel_settings':tab.settings['front_panel_settings'], 'saved_data': tab.get_all_save_data()}
 
             # A tab found in no known notebook is saved at notebook 0, page 0, so it
             # reappears there on restart.
@@ -260,7 +260,7 @@ class FrontPanelSettings:
 
         for device_name, device_state in tab_data.items():
             logger.debug("saving front panel for device:" + device_name)
-            for hardware_name, data in device_state["front_panel"].items():
+            for hardware_name, data in device_state["front_panel_settings"].items():
                 if data != {}:
                     if isinstance(data['base_value'], (str, bytes)):
                         logger.warning('Could not save data for channel %s on device %s because support for output values that are strings is not yet supported.'%(hardware_name, device_name))
@@ -277,7 +277,7 @@ class FrontPanelSettings:
                     else:
                         logger.warning('Could not save data for channel %s on device %s because the output value (in base units) was not a string or could not be coerced to a float without loss of precision'%(hardware_name, device_name))
 
-            od = repr(device_state["save_data"])
+            od = repr(device_state["saved_data"])
             other_data_list.append(od)
             max_od_length = len(od) if len(od) > max_od_length else max_od_length
 

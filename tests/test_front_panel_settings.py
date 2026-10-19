@@ -25,7 +25,7 @@ def a_front_panel():
     """The smallest front panel with one saved channel and one tab."""
     tab_data = {
         'fake_device': {
-            'front_panel': {
+            'front_panel_settings': {
                 'ao0': {
                     'name': 'a channel',
                     'base_value': 1.5,
@@ -34,7 +34,7 @@ def a_front_panel():
                     'current_units': 'V',
                 },
             },
-            'save_data': {'a key': 'a value'},
+            'saved_data': {'a key': 'a value'},
         },
     }
     notebook_data = {

@@ -213,7 +213,7 @@ class BLACS(LabscriptGuiApplication):
                 TabClass = device_registry.get_BLACS_tab(labscript_device_class_name)
                 self.tablist[device_name] = TabClass(self.tab_widgets[0],self.settings_dict[device_name])
             except Exception:
-                self.failed_device_settings[device_name] = {"front_panel": self.settings_dict[device_name]["front_panel_settings"], "save_data": self.settings_dict[device_name]["saved_data"]}
+                self.failed_device_settings[device_name] = {"front_panel_settings": self.settings_dict[device_name]["front_panel_settings"], "saved_data": self.settings_dict[device_name]["saved_data"]}
                 del self.settings_dict[device_name]
                 del self.attached_devices[device_name]
                 self.connection_table.remove_device(device_name)
