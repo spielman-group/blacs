@@ -733,7 +733,7 @@ class DeviceWorker(Worker):
         
         return front_panel_values
         
-    def transition_to_buffered(self,device_name,h5file,front_panel_values,refresh):
+    def transition_to_buffered(self,device_name,h5_file,front_panel_values,fresh):
         time.sleep(3)
         for channel,value in front_panel_values.items():
             if isinstance(value, float):
