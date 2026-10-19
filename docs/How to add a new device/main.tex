@@ -1,4 +1,6 @@
 \documentclass[12pt]{article}
+% listings' upquote needs T1 for the double quote.
+\usepackage[T1]{fontenc}
 \include{pythonlisting}
 \usepackage{setspace}
 \usepackage[margin=1.5cm]{geometry}
@@ -258,7 +260,7 @@ def get_save_data(self):
 	# your code here
 	pass
 	
-def restore_save_data(self, save_data):
+def restore_save_data(self, data):
 	# your code here
 	pass
 \end{python}
@@ -1136,8 +1138,8 @@ Your function should look something like:
 \subsection{The \texttt{transition\_to\_buffered} function}\label{worker:transition_to_buffered}
 This function is called whenever the Queue Manager requests the device to move into buffered mode in preparation for executing a buffered sequence.
 
-This function is passed the \texttt{device\_name} to look up in the HDF5 file located at the path contained by \texttt{h5file}.
-The function is also passed the current initial\_values, so that your device can be programmed to maintain output continuity until the device is triggered.
+This function is passed the \texttt{device\_name} to look up in the HDF5 file located at the path contained by \texttt{h5\_file}.
+The function is also passed the current \texttt{front\_panel\_values}, so that your device can be programmed to maintain output continuity until the device is triggered.
 This may require inserting a dummy instruction at the beginning of the instruction list provided by \texttt{labscript}.
 The final argument passed to this function is a Boolean value that indicates whether the device should have it's entire instruction table overwritten (only applies to device classes that have called \texttt{self.supports\_smart\_programming(True)} in the \texttt{initialise\_GUI} function).
 
@@ -1149,7 +1151,8 @@ This will allow other devices to access the file to begin their programming proc
 
 Example:
 \begin{python}
-    def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
+    def transition_to_buffered(self,device_name,h5_file,
+                               front_panel_values,fresh):
         # Open HDF5 file
         # copy device data to local memory
         # close HDF5 file
