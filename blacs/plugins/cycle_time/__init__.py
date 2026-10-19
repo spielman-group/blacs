@@ -20,7 +20,7 @@ import labscript_utils.h5_lock
 import h5py
 
 from blacs.plugins import BasePlugin, callback
-from labscript_utils.properties import get_attribute
+import labscript_utils.properties as properties
 
 name = "cycle_time"
 module = "cycle_time" # should be folder name
@@ -62,8 +62,8 @@ class Plugin(BasePlugin):
                 group = f['shot_properties']
             except KeyError:
                 return
-            self.next_target_cycle_time = get_attribute(group, 'target_cycle_time')
-            self.next_delay_after_programming = get_attribute(
+            self.next_target_cycle_time = properties.get_attribute(group, 'target_cycle_time')
+            self.next_delay_after_programming = properties.get_attribute(
                 group, 'cycle_time_delay_after_programming'
             )
 
