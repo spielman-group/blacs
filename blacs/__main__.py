@@ -239,6 +239,9 @@ class BLACS(LabscriptGuiApplication):
                         self.settings_dict[settings_key]["front_panel_settings"] = (
                             settings[settings_key] if settings_key in settings else {}
                         )
+                        self.settings_dict[settings_key]["front_panel_settings_file"] = (
+                            self.settings_path
+                        )
                         self.settings_dict[settings_key]["saved_data"] = (
                             tab_data[settings_key]['data'] if settings_key in tab_data else {}
                         )
