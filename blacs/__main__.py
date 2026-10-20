@@ -208,6 +208,7 @@ class BLACS(LabscriptGuiApplication):
                 self.settings_dict.setdefault(device_name,{"device_name":device_name})
                 self.settings_dict[device_name]["connection_table"] = self.connection_table
                 self.settings_dict[device_name]["front_panel_settings"] = settings[device_name] if device_name in settings else {}
+                self.settings_dict[device_name]["front_panel_settings_file"] = self.settings_path
                 self.settings_dict[device_name]["saved_data"] = tab_data[device_name]['data'] if device_name in tab_data else {}
                 logger.info('instantiating %s'%device_name)
                 TabClass = device_registry.get_BLACS_tab(labscript_device_class_name)
@@ -354,9 +355,10 @@ class BLACS(LabscriptGuiApplication):
             if bool(data["visible"]) and int(data["notebook"]) in self.tab_widgets:
                 self.tab_widgets[int(data["notebook"])].tab_bar.setCurrentIndex(int(data["page"]))
 
-    def update_all_tab_settings(self,settings,tab_data):
+    def update_all_tab_settings(self,settings,tab_data,settings_file):
         for tab_name,tab in self.tablist.items():
             self.settings_dict[tab_name]["front_panel_settings"] = settings[tab_name] if tab_name in settings else {}
+            self.settings_dict[tab_name]["front_panel_settings_file"] = settings_file
             self.settings_dict[tab_name]["saved_data"] = tab_data[tab_name]['data'] if tab_name in tab_data else {}
             tab.update_from_settings(self.settings_dict[tab_name])
 
@@ -390,7 +392,7 @@ class BLACS(LabscriptGuiApplication):
 
                         self.restore_window(tab_data)
                         self.order_tabs(tab_data)
-                        self.update_all_tab_settings(settings,tab_data)
+                        self.update_all_tab_settings(settings,tab_data,filepath)
 
                         self.shot_executor.restore_save_data(
                             self._restore_shot_execution_data(tab_data['BLACS settings'])
