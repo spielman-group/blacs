@@ -226,7 +226,6 @@ class Plugin(BasePlugin):
                 self.markers = None
             try:
                 self.waits = f['waits'][:]
-                self.waits.sort(order='time')
             except KeyError:
                 self.waits = None
         self.shot_start_time = time.time()
