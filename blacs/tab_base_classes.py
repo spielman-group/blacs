@@ -807,9 +807,10 @@ class Worker(Process):
         """Override to set the worker up, in the worker process.
 
         It is the first job the worker runs, after the connection table properties
-        and ``workerargs`` have become attributes; a name the Worker class already
-        has is skipped with a warning. Import hardware modules here, not at the top
-        of your file, so they load only in the worker process, not in BLACS."""
+        and ``workerargs`` have become attributes, overriding a subclass's class
+        attributes; a name the Worker base class already has is skipped with a
+        warning. Import hardware modules here, not at the top of your file, so they
+        load only in the worker process, not in BLACS."""
         pass
     
     def run(self, worker_name, device_name, extraargs):
@@ -827,7 +828,9 @@ class Worker(Process):
         import labscript_utils.h5_lock
         process_tree.zlock_client.set_process_name(log_name)
         for name, value in extraargs.items():
-            if hasattr(self, name):
+            # Only the base class's own names are protected: a subclass's class
+            # attribute is a default the workerarg overrides.
+            if hasattr(Worker, name) or name in vars(self):
                 msg = f"""attribute `{name}` overwrites an attribute of the Worker base class
                     with the same name. This may cause unexpected behaviour. Consider
                     renaming it."""
