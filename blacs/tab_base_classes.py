@@ -733,7 +733,11 @@ class Tab:
                     # Send each yielded job to its worker, and the result back to the
                     # generator, until it raises StopIteration.
                     generator_running = True
-                    worker_process,worker_function,worker_args,worker_kwargs = inmain(generator.__next__)
+                    try:
+                        worker_process,worker_function,worker_args,worker_kwargs = inmain(generator.__next__)
+                    except StopIteration:
+                        # It finished without yielding a job.
+                        generator_running = False
                     while generator_running:
                         try:
                             logger.debug('Instructing worker %s to do job %s'%(worker_process,worker_function) )
