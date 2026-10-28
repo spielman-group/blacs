@@ -109,14 +109,10 @@ rejection that does stop BLACS is a local override shot it cannot read: that
 file was chosen at the apparatus, there is no queue row to hold it, and the
 alternative is retrying an unreadable file once a second.
 
-A shot that never got as far as BLACS is held the same way. With lazy compile,
-a queued shot is compiled when BLACS asks for it, and one that fails to compile
-goes red at the head with the reason rather than being dropped — a row
-disappearing looks exactly like the queue draining normally, which is what a
-labscript file that cannot compile used to produce. That row is the one kind
-that is *not* retried: a compile that fails partway leaves data in the shot
-file that stops labscript ever compiling into it, so only deleting it, which
-takes the half-written file with it, moves the queue on.
+A shot that never got as far as BLACS is not held. With lazy compile, a queued
+shot is compiled when BLACS asks for it, and one that fails to compile leaves
+the queue at once, with its error in runmanager's output box, and the shots
+behind it carry on: it would never run, and BLACS has nothing to report for it.
 
 **A row still marked running is offered again.** If an offer reply never
 reaches BLACS, or BLACS restarts while holding the shot, the row would
@@ -216,12 +212,9 @@ the work waiting below it. Running is simply what that row looks like — being
 above the rule is what says BLACS was given the shot, so it needs no colour of
 its own. One colour is used, for the one case that is an exception: the row
 turns red once the shot has come back without running, and is waiting for an
-operator. A shot that never compiled is red too, but below the rule with the
-waiting work, because it never went to BLACS: the reserved row says what the
-apparatus was given, and a file that failed to compile in runmanager was not. It is a row rather than a caption above the table so that
-it carries the same columns as everything else, and it is there whether or not
-BLACS has a shot, saying so when it does not, so the queue below it never
-shifts.
+operator. It is a row rather than a caption above the table so that it carries
+the same columns as everything else, and it is there whether or not BLACS has a
+shot, saying so when it does not, so the queue below it never shifts.
 
 That the row is still in the queue means queue editing can reach it, and the
 file must not be taken away: BLACS may be writing into it.
