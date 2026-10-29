@@ -525,444 +525,452 @@ class ShotExecutor:
         self.set_status("Idle")
         
         while self.manager_running:
-            path = None
-            # Unchecking Request shots stops the next request, not the shot in hand,
-            # nor the report of an outcome still held, so runmanager always learns
-            # how the shot it offered turned out.
-            if not self.requesting_shots and self._pending_outcome is None:
-                self._runmanager_link.show_state(NOT_REQUESTING)
-                # Leave a standing local error on the status line.
-                if not self.local_error:
-                    self.set_status('Idle')
-                time.sleep(1)
-                continue
-
-            shot_id = None
-            agnostic_path = None
-            runmanager_paused = False
-            runmanager_pending = False
-            runmanager_answered = self.runmanager_alive()
-            # Read after the probe, which can take a while: unticking Request
-            # shots during it stops the request that follows.
-            request_shot = self.requesting_shots
-            if runmanager_answered:
-                # The only request for a shot, made between shots with the last
-                # outcome in hand. Runmanager's reclaim relies on it: asking from
-                # anywhere else, or during a shot, would hand one shot out twice.
-                response, _ = self.exchange_with_runmanager(request_shot)
-                shot_id = response['shot_id']
-                agnostic_path = response['path']
-                # A paused runmanager falls through to the local override shot, as an
-                # empty queue does; it is told apart so the light can say why no
-                # queued work is arriving.
-                runmanager_paused = response['state'] == PROVIDER_PAUSED
-                # Pending is the shot runmanager will offer next, still
-                # compiling: wait for it rather than run ours in the gap.
-                runmanager_pending = response['state'] == PROVIDER_PENDING
-            self._current_shot_id = shot_id
-
-            if not agnostic_path and self.requesting_shots and not runmanager_pending:
-                local_override_path = str(
-                    inmain(self._ui.local_override_lineEdit.text)
-                ).strip()
-                if local_override_path:
-                    agnostic_path = path_to_agnostic(
-                        os.path.abspath(local_override_path)
-                    )
-
-            if not agnostic_path:
-                # Leave a standing local error on the status line: this pass,
-                # which delivers that shot's outcome, would otherwise wipe it
-                # before an operator could read it.
-                if not self.local_error:
-                    self.set_status('Idle')
-                if not request_shot:
+            try:
+                path = None
+                # Unchecking Request shots stops the next request, not the shot in hand,
+                # nor the report of an outcome still held, so runmanager always learns
+                # how the shot it offered turned out.
+                if not self.requesting_shots and self._pending_outcome is None:
                     self._runmanager_link.show_state(NOT_REQUESTING)
-                elif runmanager_paused:
-                    self._runmanager_link.show_state('Runmanager queue paused')
-                else:
-                    self._runmanager_link.show_state(REQUESTING)
-                time.sleep(1)
-                continue
+                    # Leave a standing local error on the status line.
+                    if not self.local_error:
+                        self.set_status('Idle')
+                    time.sleep(1)
+                    continue
 
-            path, message = self.process_request(path_to_local(str(agnostic_path)))
-            if path is None:
-                logger.error(message.strip())
-                if shot_id is not None:
-                    # Reported as rejected on the next exchange. Requests stay on:
-                    # the shot is unusable, not the apparatus, and runmanager stops
-                    # offering the row, so we run our own shot meanwhile.
-                    self.report_shot_outcome(None, BLACS_REJECTED, message.strip())
-                    self.set_status("Rejected shot from runmanager")
-                else:
-                    # A local override shot has no runmanager row to hold it, so stop
-                    # rather than retry an unreadable file every second.
-                    self.set_status("Rejected local override shot\nRequests stopped")
-                    self.stop_requesting_shots(message.strip())
-                time.sleep(1)
-                continue
+                shot_id = None
+                agnostic_path = None
+                runmanager_paused = False
+                runmanager_pending = False
+                runmanager_answered = self.runmanager_alive()
+                # Read after the probe, which can take a while: unticking Request
+                # shots during it stops the request that follows.
+                request_shot = self.requesting_shots
+                if runmanager_answered:
+                    # The only request for a shot, made between shots with the last
+                    # outcome in hand. Runmanager's reclaim relies on it: asking from
+                    # anywhere else, or during a shot, would hand one shot out twice.
+                    response, _ = self.exchange_with_runmanager(request_shot)
+                    shot_id = response['shot_id']
+                    agnostic_path = response['path']
+                    # A paused runmanager falls through to the local override shot, as an
+                    # empty queue does; it is told apart so the light can say why no
+                    # queued work is arriving.
+                    runmanager_paused = response['state'] == PROVIDER_PAUSED
+                    # Pending is the shot runmanager will offer next, still
+                    # compiling: wait for it rather than run ours in the gap.
+                    runmanager_pending = response['state'] == PROVIDER_PENDING
+                self._current_shot_id = shot_id
 
-            self.set_status('Preparing shot...', path)
-            logger.info('Got a file: %s'%path)
-            
-            devices_in_use = {}
-            transition_list = {}   
-            self.notify_queue = queue.Queue()
-
-            def abort_function():
-                try:
-                    # "Shot Executor" is never a device name: it has a space, so is not
-                    # a valid Python name.
-                    self.notify_queue.put(['Shot Executor', 'abort'])
-                except Exception:
-                    logger.exception('Could not send abort message to the shot executor')
-        
-            def restart_function(device_name):
-                try:
-                    self.notify_queue.put([device_name, 'restart'])
-                except Exception:
-                    logger.exception('Could not send restart message to the shot executor for device %s'%device_name)
-        
-            # Transition to buffered.
-            try:  
-                
-                timed_out = False
-                error_condition = False
-                abort = False
-                restarted = False
-                error_devices = []
-                restarted_devices = []
-                self.set_status("Transitioning to buffered...", path)
-                
-                inmain(self._ui.shot_abort_button.clicked.connect,abort_function)
-                inmain(self._ui.shot_abort_button.setEnabled,True)
-                                
-                plugins.manager.fire_event('pre_transition_to_buffered', path)
-
-                start_time = time.time()
-                
-                with h5py.File(path, 'r') as hdf5_file:
-                    devices_in_use = {}
-                    start_order = {}
-                    stop_order = {}
-                    for name in  hdf5_file['devices']:
-                        device_properties = labscript_utils.properties.get(
-                            hdf5_file, name, 'device_properties'
+                if not agnostic_path and self.requesting_shots and not runmanager_pending:
+                    local_override_path = str(
+                        inmain(self._ui.local_override_lineEdit.text)
+                    ).strip()
+                    if local_override_path:
+                        agnostic_path = path_to_agnostic(
+                            os.path.abspath(local_override_path)
                         )
-                        devices_in_use[name] = self.BLACS.tablist[name]
-                        start_order[name] = device_properties.get('start_order', None)
-                        stop_order[name] = device_properties.get('stop_order', None)
 
-                start_groups = defaultdict(set)
-                stop_groups = defaultdict(set)
-                for name in devices_in_use:
-                    start_groups[start_order[name]].add(name)
-                    stop_groups[stop_order[name]].add(name)
+                if not agnostic_path:
+                    # Leave a standing local error on the status line: this pass,
+                    # which delivers that shot's outcome, would otherwise wipe it
+                    # before an operator could read it.
+                    if not self.local_error:
+                        self.set_status('Idle')
+                    if not request_shot:
+                        self._runmanager_link.show_state(NOT_REQUESTING)
+                    elif runmanager_paused:
+                        self._runmanager_link.show_state('Runmanager queue paused')
+                    else:
+                        self._runmanager_link.show_state(REQUESTING)
+                    time.sleep(1)
+                    continue
 
-                while (transition_list or start_groups) and not error_condition:
-                    if not transition_list:
-                        # Ready to transition the next group:
-                        for name in start_groups.pop(min(start_groups)):
-                            try:
-                                success = self.transition_device_to_buffered(name,transition_list,path,restart_function)
-                                if not success:
-                                    logger.error('%s has an error condition, aborting run' % name)
+                path, message = self.process_request(path_to_local(str(agnostic_path)))
+                if path is None:
+                    logger.error(message.strip())
+                    if shot_id is not None:
+                        # Reported as rejected on the next exchange. Requests stay on:
+                        # the shot is unusable, not the apparatus, and runmanager stops
+                        # offering the row, so we run our own shot meanwhile.
+                        self.report_shot_outcome(None, BLACS_REJECTED, message.strip())
+                        self.set_status("Rejected shot from runmanager")
+                    else:
+                        # A local override shot has no runmanager row to hold it, so stop
+                        # rather than retry an unreadable file every second.
+                        self.set_status("Rejected local override shot\nRequests stopped")
+                        self.stop_requesting_shots(message.strip())
+                    time.sleep(1)
+                    continue
+
+                self.set_status('Preparing shot...', path)
+                logger.info('Got a file: %s'%path)
+            
+                devices_in_use = {}
+                transition_list = {}   
+                self.notify_queue = queue.Queue()
+
+                def abort_function():
+                    try:
+                        # "Shot Executor" is never a device name: it has a space, so is not
+                        # a valid Python name.
+                        self.notify_queue.put(['Shot Executor', 'abort'])
+                    except Exception:
+                        logger.exception('Could not send abort message to the shot executor')
+        
+                def restart_function(device_name):
+                    try:
+                        self.notify_queue.put([device_name, 'restart'])
+                    except Exception:
+                        logger.exception('Could not send restart message to the shot executor for device %s'%device_name)
+        
+                # Transition to buffered.
+                try:  
+                
+                    timed_out = False
+                    error_condition = False
+                    abort = False
+                    restarted = False
+                    error_devices = []
+                    restarted_devices = []
+                    self.set_status("Transitioning to buffered...", path)
+                
+                    inmain(self._ui.shot_abort_button.clicked.connect,abort_function)
+                    inmain(self._ui.shot_abort_button.setEnabled,True)
+                                
+                    plugins.manager.fire_event('pre_transition_to_buffered', path)
+
+                    start_time = time.time()
+                
+                    with h5py.File(path, 'r') as hdf5_file:
+                        devices_in_use = {}
+                        start_order = {}
+                        stop_order = {}
+                        for name in  hdf5_file['devices']:
+                            device_properties = labscript_utils.properties.get(
+                                hdf5_file, name, 'device_properties'
+                            )
+                            devices_in_use[name] = self.BLACS.tablist[name]
+                            start_order[name] = device_properties.get('start_order', None)
+                            stop_order[name] = device_properties.get('stop_order', None)
+
+                    start_groups = defaultdict(set)
+                    stop_groups = defaultdict(set)
+                    for name in devices_in_use:
+                        start_groups[start_order[name]].add(name)
+                        stop_groups[stop_order[name]].add(name)
+
+                    while (transition_list or start_groups) and not error_condition:
+                        if not transition_list:
+                            # Ready to transition the next group:
+                            for name in start_groups.pop(min(start_groups)):
+                                try:
+                                    success = self.transition_device_to_buffered(name,transition_list,path,restart_function)
+                                    if not success:
+                                        logger.error('%s has an error condition, aborting run' % name)
+                                        error_condition = True
+                                        error_devices.append(name)
+                                        break
+                                except Exception:
+                                    logger.exception('Exception while transitioning %s to buffered mode.'%(name))
                                     error_condition = True
                                     error_devices.append(name)
                                     break
-                            except Exception:
-                                logger.exception('Exception while transitioning %s to buffered mode.'%(name))
-                                error_condition = True
-                                error_devices.append(name)
+                            if error_condition:
                                 break
-                        if error_condition:
-                            break
                         
-                    try:
-                        logger.debug('Waiting for the following devices to finish transitioning to buffered mode: %s'%str(transition_list))
-                        device_name, result = self.notify_queue.get(timeout=2)
+                        try:
+                            logger.debug('Waiting for the following devices to finish transitioning to buffered mode: %s'%str(transition_list))
+                            device_name, result = self.notify_queue.get(timeout=2)
                         
-                        if device_name == 'Shot Executor' and result == 'abort':
-                            logger.info('abort signal received from GUI')
-                            abort = True
-                            break
+                            if device_name == 'Shot Executor' and result == 'abort':
+                                logger.info('abort signal received from GUI')
+                                abort = True
+                                break
                             
-                        if result == 'fail':
-                            logger.info('abort signal received during transition to buffered of %s' % device_name)
-                            error_condition = True
-                            error_devices.append(device_name)
-                            break
-                        elif result == 'restart':
-                            logger.info('Device %s was restarted, aborting shot.'%device_name)
-                            restarted = True
-                            restarted_devices.append(device_name)
-                            break
-                            
-                        logger.debug('%s finished transitioning to buffered mode' % device_name)
-                        
-                        # The tab says it's done, but does it have an error condition?
-                        if self.get_device_error_state(device_name,transition_list):
-                            logger.error('%s has an error condition, aborting run' % device_name)
-                            error_condition = True
-                            error_devices.append(device_name)
-                            break
-
-                        del transition_list[device_name]
-                    except queue.Empty:
-                        # It's been 2 seconds without a device finishing
-                        # transitioning to buffered. Is there an error?
-                        for name in transition_list:
-                            if self.get_device_error_state(name,transition_list):
-                                logger.error('%s has an error condition, aborting run' % name)
+                            if result == 'fail':
+                                logger.info('abort signal received during transition to buffered of %s' % device_name)
                                 error_condition = True
-                                error_devices.append(name)
-                                
-                        if error_condition:
-                            break
-                            
-                        if time.time() - start_time > timeout_limit:
-                            logger.error('Transitioning to buffered mode timed out')
-                            timed_out = True
-                            break
-
-                if timed_out or error_condition or abort or restarted:
-                    # Any shot that did not complete stops requests, an abort included, so
-                    # runmanager decides its fate and an operator sees why before
-                    # another is asked for.
-                    outcome_path = path
-                    if timed_out:
-                        outcome_status, reason = BLACS_FAILED, device_status(
-                            transition_list, 'timed out programming')
-                    elif abort:
-                        outcome_status, reason = BLACS_ABORTED, 'Aborted'
-                    elif restarted:
-                        outcome_status, reason = BLACS_FAILED, device_status(
-                            restarted_devices, 'restarted while transitioning to buffered')
-                    else:
-                        outcome_status, reason = BLACS_FAILED, device_status(
-                            error_devices, 'in error state')
-                    self.set_status(f"{reason}\nRequests stopped")
-                    self.stop_requesting_shots(reason)
-                    self.report_shot_outcome(outcome_path, outcome_status, reason)
-
-                    # Recreate the queue: we do not want to hear from devices
-                    # that are still transitioning to buffered mode.
-                    self.notify_queue = queue.Queue()
-                    for tab in devices_in_use.values():                        
-                        # abort_buffered acts only in mode BUFFERED, so it suits both a
-                        # buffered tab and one that already returned to manual mode.
-                        # Its result needs no check: it succeeds or raises in the tab.
-                        tab.abort_buffered(self.notify_queue)
-                        inmain(tab.disconnect_restart_receiver,restart_function)
-                        
-                    inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
-                    inmain(self._ui.shot_abort_button.setEnabled,False)
-                    
-                    continue
-
-                # Front panel data is read now but saved to the h5 file after the run.
-                states,tab_positions,window_data,plugin_data = self.BLACS.front_panel_settings.get_save_data()
-                self.set_status(f"Running (program time: {time.time() - start_time:.3f}s)...", path)
-                    
-                experiment_finished_notifications = queue.Queue()
-                logger.debug('About to start the master pseudoclock')
-                run_time = datetime.datetime.now()
-
-                plugins.manager.fire_event('science_starting', path)
-
-                self.BLACS.tablist[self.master_pseudoclock].start_run(
-                    experiment_finished_notifications
-                )
-                
-                                                
-                abort = False
-                restarted = False
-                done = False
-                error_devices = []
-                restarted_devices = []
-                while not (abort or restarted or done):
-                    try:
-                        done = (
-                            experiment_finished_notifications.get(timeout=0.5) == 'done'
-                        )
-                    except queue.Empty:
-                        pass
-                    try:
-                        # Poll notify_queue for abort signals from the button or
-                        # device restarts.
-                        device_name, result = self.notify_queue.get_nowait()
-                        if (device_name == 'Shot Executor' and result == 'abort'):
-                            abort = True
-                        if result == 'restart':
-                            restarted = True
-                            restarted_devices.append(device_name)
-                        for device_name, tab in devices_in_use.items():
-                            if self.get_device_error_state(device_name,devices_in_use):
-                                logger.error('%s has an error condition, aborting run' % device_name)
-                                restarted = True
                                 error_devices.append(device_name)
-                    except queue.Empty:
-                        pass
+                                break
+                            elif result == 'restart':
+                                logger.info('Device %s was restarted, aborting shot.'%device_name)
+                                restarted = True
+                                restarted_devices.append(device_name)
+                                break
+                            
+                            logger.debug('%s finished transitioning to buffered mode' % device_name)
                         
-                if abort or restarted:
-                    for devicename, tab in devices_in_use.items():
-                        if tab.mode == MODE_BUFFERED:
-                            tab.abort_buffered(self.notify_queue)
-                        inmain(tab.disconnect_restart_receiver,restart_function)
-                                            
-                inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
-                inmain(self._ui.shot_abort_button.setEnabled,False)
-                
-                if restarted:
-                    if error_devices:
-                        reason = device_status(error_devices, 'in error state during the run')
-                    else:
-                        reason = device_status(restarted_devices, 'restarted during the run')
-                    self.stop_requesting_shots(reason)
-                    self.set_status(f"{reason}\nRequests stopped")
-                    self.report_shot_outcome(path, BLACS_FAILED, reason)
-                elif abort:
-                    # Stop as for any other shot that did not complete, so
-                    # runmanager decides whether it goes back in the queue:
-                    self.stop_requesting_shots('Aborted')
-                    self.set_status("Aborted\nRequests stopped")
-                    self.report_shot_outcome(path, BLACS_ABORTED, 'Aborted')
-                    
-                if abort or restarted:
-                    continue                
-                
-                logger.info('Run complete')
-                self.set_status("Saving data...", path)
-            except Exception:
-                logger.exception("Error in shot execution. Requests stopped.")
+                            # The tab says it's done, but does it have an error condition?
+                            if self.get_device_error_state(device_name,transition_list):
+                                logger.error('%s has an error condition, aborting run' % device_name)
+                                error_condition = True
+                                error_devices.append(device_name)
+                                break
 
-                zprocess.raise_exception_in_thread(sys.exc_info())
-                self.stop_requesting_shots('Error in shot execution')
-                self.reset_failed_shot_file(path)
-                
-                # Need to put devices back in manual mode
-                self._abort_buffered_devices(devices_in_use, restart_function)
-                self.set_status("Error in shot execution\nRequests stopped")
-                self.report_shot_outcome(
-                    path, BLACS_FAILED, 'Error in shot execution')
-
-                inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
-                inmain(self._ui.shot_abort_button.setEnabled,False)
-                
-                continue
-                             
-            finally:
-                plugins.manager.fire_event('science_over', path)
-
-            # Transition to manual.
-            try:
-                with h5py.File(path,'r+') as hdf5_file:
-                    self.BLACS.front_panel_settings.store_front_panel_in_h5(
-                        hdf5_file,
-                        states,
-                        tab_positions,
-                        window_data,
-                        plugin_data,
-                        save_conn_table=False,
-                        shot_file=True,
-                    )
-
-                    data_group = hdf5_file['/'].require_group('data')
-                    hdf5_file.attrs['run time'] = run_time.strftime('%Y%m%dT%H%M%S.%f')
-        
-                error_condition = False
-                error_devices = []
-                response_list = {}
-                # If one device fails we still transition the rest to manual mode.
-                while stop_groups:
-                    transition_list = {}
-                    for name in stop_groups.pop(min(stop_groups)):
-                        if name in response_list:
-                            # Restarted while an earlier group was waited on.
-                            continue
-                        tab = devices_in_use[name]
-                        try:
-                            tab.transition_to_manual(self.notify_queue)
-                            transition_list[name] = tab
-                        except Exception:
-                            logger.exception('Exception while transitioning %s to manual mode.'%(name))
-                            error_condition = True
-                            error_devices.append(name)
-                    logged_waiting = None
-                    while transition_list:
-                        # Logged when the list changes, not at each 2 s check.
-                        if set(transition_list) != logged_waiting:
-                            logged_waiting = set(transition_list)
-                            logger.info('Waiting for the following devices to finish transitioning to manual mode: %s'%str(transition_list))
-                        try:
-                            name, result = self.notify_queue.get(timeout=2)
-                            if name == 'Shot Executor' and result == 'abort':
-                                # Ignore abort signals left in the queue:
-                                # it is too late to abort.
-                                continue
+                            del transition_list[device_name]
                         except queue.Empty:
-                            # 2 seconds without a device transitioning to manual mode.
-                            # Is there an error:
-                            for name in transition_list.copy():
-                                if self.get_device_error_state(name, transition_list):
+                            # It's been 2 seconds without a device finishing
+                            # transitioning to buffered. Is there an error?
+                            for name in transition_list:
+                                if self.get_device_error_state(name,transition_list):
+                                    logger.error('%s has an error condition, aborting run' % name)
                                     error_condition = True
                                     error_devices.append(name)
-                                    logger.debug('%s is in an error state' % name)
-                                    response_list[name] = 'error'
-                                    inmain(transition_list[name].disconnect_restart_receiver, restart_function)
-                                    del transition_list[name]
-                            continue
-                        if name in response_list:
-                            # A device given up on above may still answer, too late.
-                            continue
-                        response_list[name] = result
-                        if result == 'fail':
-                            error_condition = True
-                            error_devices.append(name)
-                            logger.debug('%s failed to transition to manual' % name)
-                        elif result == 'restart':
-                            error_condition = True
-                            error_devices.append(name)
-                            logger.debug('%s restarted during transition to manual' % name)
-                        elif self.get_device_error_state(name, devices_in_use):
-                            error_condition = True
-                            error_devices.append(name)
-                            logger.debug('%s is in an error state' % name)
+                                
+                            if error_condition:
+                                break
+                            
+                            if time.time() - start_time > timeout_limit:
+                                logger.error('Transitioning to buffered mode timed out')
+                                timed_out = True
+                                break
+
+                    if timed_out or error_condition or abort or restarted:
+                        # Any shot that did not complete stops requests, an abort included, so
+                        # runmanager decides its fate and an operator sees why before
+                        # another is asked for.
+                        outcome_path = path
+                        if timed_out:
+                            outcome_status, reason = BLACS_FAILED, device_status(
+                                transition_list, 'timed out programming')
+                        elif abort:
+                            outcome_status, reason = BLACS_ABORTED, 'Aborted'
+                        elif restarted:
+                            outcome_status, reason = BLACS_FAILED, device_status(
+                                restarted_devices, 'restarted while transitioning to buffered')
                         else:
-                            logger.debug('%s finished transitioning to manual mode' % name)
-                        tab = devices_in_use[name]
-                        inmain(tab.disconnect_restart_receiver, restart_function)
-                        # Absent for a device of a later group that restarted.
-                        transition_list.pop(name, None)
+                            outcome_status, reason = BLACS_FAILED, device_status(
+                                error_devices, 'in error state')
+                        self.set_status(f"{reason}\nRequests stopped")
+                        self.stop_requesting_shots(reason)
+                        self.report_shot_outcome(outcome_path, outcome_status, reason)
+
+                        # Recreate the queue: we do not want to hear from devices
+                        # that are still transitioning to buffered mode.
+                        self.notify_queue = queue.Queue()
+                        for tab in devices_in_use.values():                        
+                            # abort_buffered acts only in mode BUFFERED, so it suits both a
+                            # buffered tab and one that already returned to manual mode.
+                            # Its result needs no check: it succeeds or raises in the tab.
+                            tab.abort_buffered(self.notify_queue)
+                            inmain(tab.disconnect_restart_receiver,restart_function)
+                        
+                        inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
+                        inmain(self._ui.shot_abort_button.setEnabled,False)
                     
+                        continue
+
+                    # Front panel data is read now but saved to the h5 file after the run.
+                    states,tab_positions,window_data,plugin_data = self.BLACS.front_panel_settings.get_save_data()
+                    self.set_status(f"Running (program time: {time.time() - start_time:.3f}s)...", path)
+                    
+                    experiment_finished_notifications = queue.Queue()
+                    logger.debug('About to start the master pseudoclock')
+                    run_time = datetime.datetime.now()
+
+                    plugins.manager.fire_event('science_starting', path)
+
+                    self.BLACS.tablist[self.master_pseudoclock].start_run(
+                        experiment_finished_notifications
+                    )
+                
+                                                
+                    abort = False
+                    restarted = False
+                    done = False
+                    error_devices = []
+                    restarted_devices = []
+                    while not (abort or restarted or done):
+                        try:
+                            done = (
+                                experiment_finished_notifications.get(timeout=0.5) == 'done'
+                            )
+                        except queue.Empty:
+                            pass
+                        try:
+                            # Poll notify_queue for abort signals from the button or
+                            # device restarts.
+                            device_name, result = self.notify_queue.get_nowait()
+                            if (device_name == 'Shot Executor' and result == 'abort'):
+                                abort = True
+                            if result == 'restart':
+                                restarted = True
+                                restarted_devices.append(device_name)
+                            for device_name, tab in devices_in_use.items():
+                                if self.get_device_error_state(device_name,devices_in_use):
+                                    logger.error('%s has an error condition, aborting run' % device_name)
+                                    restarted = True
+                                    error_devices.append(device_name)
+                        except queue.Empty:
+                            pass
+                        
+                    if abort or restarted:
+                        for devicename, tab in devices_in_use.items():
+                            if tab.mode == MODE_BUFFERED:
+                                tab.abort_buffered(self.notify_queue)
+                            inmain(tab.disconnect_restart_receiver,restart_function)
+                                            
+                    inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
+                    inmain(self._ui.shot_abort_button.setEnabled,False)
+                
+                    if restarted:
+                        if error_devices:
+                            reason = device_status(error_devices, 'in error state during the run')
+                        else:
+                            reason = device_status(restarted_devices, 'restarted during the run')
+                        self.stop_requesting_shots(reason)
+                        self.set_status(f"{reason}\nRequests stopped")
+                        self.report_shot_outcome(path, BLACS_FAILED, reason)
+                    elif abort:
+                        # Stop as for any other shot that did not complete, so
+                        # runmanager decides whether it goes back in the queue:
+                        self.stop_requesting_shots('Aborted')
+                        self.set_status("Aborted\nRequests stopped")
+                        self.report_shot_outcome(path, BLACS_ABORTED, 'Aborted')
+                    
+                    if abort or restarted:
+                        continue                
+                
+                    logger.info('Run complete')
+                    self.set_status("Saving data...", path)
+                except Exception:
+                    logger.exception("Error in shot execution. Requests stopped.")
+
+                    zprocess.raise_exception_in_thread(sys.exc_info())
+                    self.stop_requesting_shots('Error in shot execution')
+                    self.reset_failed_shot_file(path)
+                
+                    # Need to put devices back in manual mode
+                    self._abort_buffered_devices(devices_in_use, restart_function)
+                    self.set_status("Error in shot execution\nRequests stopped")
+                    self.report_shot_outcome(
+                        path, BLACS_FAILED, 'Error in shot execution')
+
+                    inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
+                    inmain(self._ui.shot_abort_button.setEnabled,False)
+                
+                    continue
+                             
+                finally:
+                    plugins.manager.fire_event('science_over', path)
+
+                # Transition to manual.
+                try:
+                    with h5py.File(path,'r+') as hdf5_file:
+                        self.BLACS.front_panel_settings.store_front_panel_in_h5(
+                            hdf5_file,
+                            states,
+                            tab_positions,
+                            window_data,
+                            plugin_data,
+                            save_conn_table=False,
+                            shot_file=True,
+                        )
+
+                        data_group = hdf5_file['/'].require_group('data')
+                        hdf5_file.attrs['run time'] = run_time.strftime('%Y%m%dT%H%M%S.%f')
+        
+                    error_condition = False
+                    error_devices = []
+                    response_list = {}
+                    # If one device fails we still transition the rest to manual mode.
+                    while stop_groups:
+                        transition_list = {}
+                        for name in stop_groups.pop(min(stop_groups)):
+                            if name in response_list:
+                                # Restarted while an earlier group was waited on.
+                                continue
+                            tab = devices_in_use[name]
+                            try:
+                                tab.transition_to_manual(self.notify_queue)
+                                transition_list[name] = tab
+                            except Exception:
+                                logger.exception('Exception while transitioning %s to manual mode.'%(name))
+                                error_condition = True
+                                error_devices.append(name)
+                        logged_waiting = None
+                        while transition_list:
+                            # Logged when the list changes, not at each 2 s check.
+                            if set(transition_list) != logged_waiting:
+                                logged_waiting = set(transition_list)
+                                logger.info('Waiting for the following devices to finish transitioning to manual mode: %s'%str(transition_list))
+                            try:
+                                name, result = self.notify_queue.get(timeout=2)
+                                if name == 'Shot Executor' and result == 'abort':
+                                    # Ignore abort signals left in the queue:
+                                    # it is too late to abort.
+                                    continue
+                            except queue.Empty:
+                                # 2 seconds without a device transitioning to manual mode.
+                                # Is there an error:
+                                for name in transition_list.copy():
+                                    if self.get_device_error_state(name, transition_list):
+                                        error_condition = True
+                                        error_devices.append(name)
+                                        logger.debug('%s is in an error state' % name)
+                                        response_list[name] = 'error'
+                                        inmain(transition_list[name].disconnect_restart_receiver, restart_function)
+                                        del transition_list[name]
+                                continue
+                            if name in response_list:
+                                # A device given up on above may still answer, too late.
+                                continue
+                            response_list[name] = result
+                            if result == 'fail':
+                                error_condition = True
+                                error_devices.append(name)
+                                logger.debug('%s failed to transition to manual' % name)
+                            elif result == 'restart':
+                                error_condition = True
+                                error_devices.append(name)
+                                logger.debug('%s restarted during transition to manual' % name)
+                            elif self.get_device_error_state(name, devices_in_use):
+                                error_condition = True
+                                error_devices.append(name)
+                                logger.debug('%s is in an error state' % name)
+                            else:
+                                logger.debug('%s finished transitioning to manual mode' % name)
+                            tab = devices_in_use[name]
+                            inmain(tab.disconnect_restart_receiver, restart_function)
+                            # Absent for a device of a later group that restarted.
+                            transition_list.pop(name, None)
+                    
+                    if error_condition:
+                        reason = device_status(error_devices, 'reported an error after the run')
+                        self.set_status(f"{reason}\nRequests stopped")
+
+                except Exception:
+                    error_condition = True
+                    # Saving the data or putting the devices back failed, which is not a
+                    # device-reported error: this is what the operator is told and what
+                    # runmanager shows on the row.
+                    reason = 'Error saving data after the run'
+                    logger.exception("Error in shot execution. Requests stopped.")
+                    self.set_status("Error in shot execution\nRequests stopped")
+                    self._abort_buffered_devices(devices_in_use, restart_function)
+
+                    zprocess.raise_exception_in_thread(sys.exc_info())
+
                 if error_condition:
-                    reason = device_status(error_devices, 'reported an error after the run')
-                    self.set_status(f"{reason}\nRequests stopped")
+                    self.stop_requesting_shots(reason)
+                    self.reset_failed_shot_file(path)
 
-            except Exception:
-                error_condition = True
-                # Saving the data or putting the devices back failed, which is not a
-                # device-reported error: this is what the operator is told and what
-                # runmanager shows on the row.
-                reason = 'Error saving data after the run'
-                logger.exception("Error in shot execution. Requests stopped.")
-                self.set_status("Error in shot execution\nRequests stopped")
-                self._abort_buffered_devices(devices_in_use, restart_function)
-
-                zprocess.raise_exception_in_thread(sys.exc_info())
-
-            if error_condition:
-                self.stop_requesting_shots(reason)
-                self.reset_failed_shot_file(path)
-
-                self.report_shot_outcome(path, BLACS_FAILED, reason)
-                continue
+                    self.report_shot_outcome(path, BLACS_FAILED, reason)
+                    continue
             
-            logger.info('All devices are back in static mode.')  
+                logger.info('All devices are back in static mode.')  
 
-            self.report_shot_outcome(path, BLACS_COMPLETED)
+                self.report_shot_outcome(path, BLACS_COMPLETED)
 
-            plugins.manager.fire_event('shot_complete', path)
+                plugins.manager.fire_event('shot_complete', path)
 
-            self.set_status("Idle")
+                self.set_status("Idle")
+            except Exception:
+                # Stops requests rather than the loop, so BLACS need not be
+                # restarted; the shot in hand, if any, is offered again.
+                logger.exception('Unhandled error in shot execution. Requests stopped.')
+                zprocess.raise_exception_in_thread(sys.exc_info())
+                self.stop_requesting_shots('Error in shot execution')
+                self.set_status("Error in shot execution\nRequests stopped")
         logger.info('Stopping')

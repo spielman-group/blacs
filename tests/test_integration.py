@@ -16,6 +16,7 @@ import threading
 import time
 import types
 import unittest
+from unittest import mock
 
 import labscript_utils.h5_lock  # must precede h5py, as it does in BLACS itself
 import h5py
@@ -486,6 +487,22 @@ class RejectedShotTests(IntegrationFixture, unittest.TestCase):
     row and stops offering it, so the two do not trade the same refusal once a
     second.
     """
+
+    def test_an_unhandled_error_stops_requests_and_not_the_shot_loop(self):
+        shot = self.make_shot_file('shot_a.h5')
+        self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
+
+        def shared_drive_gone(h5_filepath):
+            raise OSError('the shared drive is gone')
+
+        self.executor.process_request = shared_drive_gone
+        self.executor.requesting_shots = True
+        # The loop also raises the error in a thread, for visibility:
+        with mock.patch.object(shot_execution.zprocess, 'raise_exception_in_thread'):
+            self.run_loop(passes=2)  # the loop's own raise would end the test here
+
+        self.assertFalse(self.executor.requesting_shots)
+        self.assertIn('Error in shot execution', self.executor.local_error)
 
     def test_closing_blacs_during_a_shot_aborts_it_and_tells_runmanager(self):
         shot = self.make_shot_file('shot_a.h5')
