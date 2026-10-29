@@ -584,7 +584,7 @@ if __name__ == '__main__':
     required_config_params = {
         "default": ["apparatus_name", "app_saved_configs"],
         "paths": ["shared_drive", "connection_table_h5", "connection_table_py",],
-        "ports": ["blacs", "lyse"],
+        "ports": ["blacs"],
     }
     exp_config = LabConfig(required_params=required_config_params)
     settings_path = get_default_appconfig_file(
