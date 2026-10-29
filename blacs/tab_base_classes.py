@@ -220,7 +220,6 @@ class Tab:
         self._tab_icon_and_colour_timer = QTimer()
         self._tab_icon_and_colour_timer.timeout.connect(self.set_tab_icon_and_colour)
         self._tab_icon = self.ICON_OK
-        self._tab_text_colour = 'black'
 
         self._not_responding_error_message = ''
         self._error = ''
@@ -681,7 +680,7 @@ class Tab:
         self.hide_not_responding_error_until = 2*self.not_responding_for
         self._ui.notresponding.hide()  
         self.error_message = ''
-        self._tab_text_colour = 'black'
+        self._tab_text_colour = self._ui.palette().color(QPalette.ColorRole.Text)
         self.set_tab_icon_and_colour()
             
     def check_time(self):
