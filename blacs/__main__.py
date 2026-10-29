@@ -79,19 +79,19 @@ process_tree.zlock_client.set_process_name(APPLICATION_NAME)
 logger = setup_logging(APPLICATION_NAME)
 labscript_utils.excepthook.set_logger(logger)
 
-logger.info(f'Python version {sys.version}')
-logger.info(f'Platform: {sys.platform}')
-logger.info(f'windows version: {sys.getwindowsversion() if WINDOWS else None}')
-logger.info(f'PyZMQ version: {zmq.__version__}')
-logger.info(f'ZMQ version: {zmq.zmq_version()}')
-logger.info(f'h5py version: {h5py.version.info}')
-logger.info(f'Qt enviroment: {QT_ENV}')
-logger.info(f'PySide/PyQt version: {PYQT_VERSION_STR}')
-logger.info(f'Qt version: {qVersion()}')
-logger.info(f'qtutils version: {qtutils.__version__}')
-logger.info(f'zprocess version: {zprocess.__version__}')
-logger.info(f'labscript_utils version: {labscript_utils.__version__}')
-logger.info(f'BLACS version: {blacs.__version__}')
+logger.info('Python version %s', sys.version)
+logger.info('Platform: %s', sys.platform)
+logger.info('windows version: %s', sys.getwindowsversion() if WINDOWS else None)
+logger.info('PyZMQ version: %s', zmq.__version__)
+logger.info('ZMQ version: %s', zmq.zmq_version())
+logger.info('h5py version: %s', h5py.version.info)
+logger.info('Qt enviroment: %s', QT_ENV)
+logger.info('PySide/PyQt version: %s', PYQT_VERSION_STR)
+logger.info('Qt version: %s', qVersion())
+logger.info('qtutils version: %s', qtutils.__version__)
+logger.info('zprocess version: %s', zprocess.__version__)
+logger.info('labscript_utils version: %s', labscript_utils.__version__)
+logger.info('BLACS version: %s', blacs.__version__)
 
 from labscript_utils.connections import ConnectionTable
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
@@ -232,7 +232,7 @@ class BLACS(LabscriptGuiApplication):
                 self.settings_dict[device_name]["front_panel_settings"] = settings[device_name] if device_name in settings else {}
                 self.settings_dict[device_name]["front_panel_settings_file"] = self.settings_path
                 self.settings_dict[device_name]["saved_data"] = tab_data[device_name]['data'] if device_name in tab_data else {}
-                logger.info('instantiating %s'%device_name)
+                logger.info('instantiating %s', device_name)
                 TabClass = device_registry.get_BLACS_tab(labscript_device_class_name)
                 self.tablist[device_name] = TabClass(self.tab_widgets[0],self.settings_dict[device_name])
             except Exception:
@@ -279,7 +279,7 @@ class BLACS(LabscriptGuiApplication):
 
             except Exception:
                 logger.exception(
-                    "Could not instantiate tab for plugin '%s'. Skipping" % module_name
+                    "Could not instantiate tab for plugin '%s'. Skipping", module_name
                 )
 
         logger.info('reordering tabs')
@@ -468,7 +468,7 @@ class BLACS(LabscriptGuiApplication):
                 try:
                     current_page = tab.close_tab(finalise=False)
                 except Exception as e:
-                    logger.error('Couldn\'t close tab:\n%s' % str(e))
+                    logger.error("Couldn't close tab:\n%s", e)
                 del self.tablist[name]
                 continue
             fatal_error = tab.state == 'fatal error'
@@ -481,7 +481,7 @@ class BLACS(LabscriptGuiApplication):
                     try:
                         current_page = tab.close_tab(finalise=False)
                     except Exception as e:
-                        logger.error('Couldn\'t close tab:\n%s' % str(e))
+                        logger.error("Couldn't close tab:\n%s", e)
                         del self.tablist[name]
                     else:
                         # finalise_close_tab can block, so it runs in a thread; it has its
@@ -604,7 +604,7 @@ if __name__ == '__main__':
     exit_if_port_in_use(exp_config)
 
     splash.update_text('loading connection table')
-    logger.info('About to load connection table: %s'%exp_config.get('paths','connection_table_h5'))
+    logger.info('About to load connection table: %s', exp_config.get('paths','connection_table_h5'))
     connection_table_h5_file = exp_config.get('paths','connection_table_h5')
     connection_table = ConnectionTable(connection_table_h5_file, logging_prefix='BLACS', exceptions_in_thread=True)
 

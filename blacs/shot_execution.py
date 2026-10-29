@@ -604,7 +604,7 @@ class ShotExecutor:
                     continue
 
                 self.set_status('Preparing shot...', path)
-                logger.info('Got a file: %s'%path)
+                logger.info('Got a file: %s', path)
             
                 devices_in_use = {}
                 transition_list = {}   
@@ -622,7 +622,7 @@ class ShotExecutor:
                     try:
                         self.notify_queue.put([device_name, 'restart'])
                     except Exception:
-                        logger.exception('Could not send restart message to the shot executor for device %s'%device_name)
+                        logger.exception('Could not send restart message to the shot executor for device %s', device_name)
         
                 # Transition to buffered.
                 try:  
@@ -667,12 +667,12 @@ class ShotExecutor:
                                 try:
                                     success = self.transition_device_to_buffered(name,transition_list,path,restart_function)
                                     if not success:
-                                        logger.error('%s has an error condition, aborting run' % name)
+                                        logger.error('%s has an error condition, aborting run', name)
                                         error_condition = True
                                         error_devices.append(name)
                                         break
                                 except Exception:
-                                    logger.exception('Exception while transitioning %s to buffered mode.'%(name))
+                                    logger.exception('Exception while transitioning %s to buffered mode.', name)
                                     error_condition = True
                                     error_devices.append(name)
                                     break
@@ -680,7 +680,7 @@ class ShotExecutor:
                                 break
                         
                         try:
-                            logger.debug('Waiting for the following devices to finish transitioning to buffered mode: %s'%str(transition_list))
+                            logger.debug('Waiting for the following devices to finish transitioning to buffered mode: %s', transition_list)
                             device_name, result = self.notify_queue.get(timeout=2)
                         
                             if device_name == 'Shot Executor' and result == 'abort':
@@ -689,21 +689,21 @@ class ShotExecutor:
                                 break
                             
                             if result == 'fail':
-                                logger.info('abort signal received during transition to buffered of %s' % device_name)
+                                logger.info('abort signal received during transition to buffered of %s', device_name)
                                 error_condition = True
                                 error_devices.append(device_name)
                                 break
                             elif result == 'restart':
-                                logger.info('Device %s was restarted, aborting shot.'%device_name)
+                                logger.info('Device %s was restarted, aborting shot.', device_name)
                                 restarted = True
                                 restarted_devices.append(device_name)
                                 break
                             
-                            logger.debug('%s finished transitioning to buffered mode' % device_name)
+                            logger.debug('%s finished transitioning to buffered mode', device_name)
                         
                             # The tab says it's done, but does it have an error condition?
                             if self.get_device_error_state(device_name,transition_list):
-                                logger.error('%s has an error condition, aborting run' % device_name)
+                                logger.error('%s has an error condition, aborting run', device_name)
                                 error_condition = True
                                 error_devices.append(device_name)
                                 break
@@ -714,7 +714,7 @@ class ShotExecutor:
                             # transitioning to buffered. Is there an error?
                             for name in transition_list:
                                 if self.get_device_error_state(name,transition_list):
-                                    logger.error('%s has an error condition, aborting run' % name)
+                                    logger.error('%s has an error condition, aborting run', name)
                                     error_condition = True
                                     error_devices.append(name)
                                 
@@ -799,7 +799,7 @@ class ShotExecutor:
                                 restarted_devices.append(device_name)
                             for device_name, tab in devices_in_use.items():
                                 if self.get_device_error_state(device_name,devices_in_use):
-                                    logger.error('%s has an error condition, aborting run' % device_name)
+                                    logger.error('%s has an error condition, aborting run', device_name)
                                     restarted = True
                                     error_devices.append(device_name)
                         except queue.Empty:
@@ -880,7 +880,7 @@ class ShotExecutor:
                                 tab.transition_to_manual(self.notify_queue)
                                 transition_list[name] = tab
                             except Exception:
-                                logger.exception('Exception while transitioning %s to manual mode.'%(name))
+                                logger.exception('Exception while transitioning %s to manual mode.', name)
                                 error_condition = True
                                 error_devices.append(name)
                         logged_waiting = None
@@ -888,7 +888,7 @@ class ShotExecutor:
                             # Logged when the list changes, not at each 2 s check.
                             if set(transition_list) != logged_waiting:
                                 logged_waiting = set(transition_list)
-                                logger.info('Waiting for the following devices to finish transitioning to manual mode: %s'%str(transition_list))
+                                logger.info('Waiting for the following devices to finish transitioning to manual mode: %s', transition_list)
                             try:
                                 name, result = self.notify_queue.get(timeout=2)
                                 if name == 'Shot Executor' and result == 'abort':
@@ -902,7 +902,7 @@ class ShotExecutor:
                                     if self.get_device_error_state(name, transition_list):
                                         error_condition = True
                                         error_devices.append(name)
-                                        logger.debug('%s is in an error state' % name)
+                                        logger.debug('%s is in an error state', name)
                                         response_list[name] = 'error'
                                         inmain(transition_list[name].disconnect_restart_receiver, restart_function)
                                         del transition_list[name]
@@ -914,17 +914,17 @@ class ShotExecutor:
                             if result == 'fail':
                                 error_condition = True
                                 error_devices.append(name)
-                                logger.debug('%s failed to transition to manual' % name)
+                                logger.debug('%s failed to transition to manual', name)
                             elif result == 'restart':
                                 error_condition = True
                                 error_devices.append(name)
-                                logger.debug('%s restarted during transition to manual' % name)
+                                logger.debug('%s restarted during transition to manual', name)
                             elif self.get_device_error_state(name, devices_in_use):
                                 error_condition = True
                                 error_devices.append(name)
-                                logger.debug('%s is in an error state' % name)
+                                logger.debug('%s is in an error state', name)
                             else:
-                                logger.debug('%s finished transitioning to manual mode' % name)
+                                logger.debug('%s finished transitioning to manual mode', name)
                             tab = devices_in_use[name]
                             inmain(tab.disconnect_restart_receiver, restart_function)
                             # Absent for a device of a later group that restarted.

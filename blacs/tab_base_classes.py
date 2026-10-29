@@ -86,7 +86,7 @@ class StateQueue:
      
     def log_current_states(self):
         if self.logging_enabled:
-            self.logger.debug('Current items in the state queue: %s'%str(self.list_of_states))
+            self.logger.debug('Current items in the state queue: %s', self.list_of_states)
      
     # Main thread only: the list is not thread safe.
     @inmain_decorator(True)   
@@ -102,7 +102,7 @@ class StateQueue:
         
         if self.logging_enabled:
             if not isinstance(data[0],str):
-                self.logger.debug('New state queued up. Allowed modes: %d, queue state indefinitely: %s, delete stale states: %s, function: %s'%(allowed_states,str(queue_state_indefinitely),str(delete_stale_states),data[0].__name__))
+                self.logger.debug('New state queued up. Allowed modes: %d, queue state indefinitely: %s, delete stale states: %s, function: %s', allowed_states, queue_state_indefinitely, delete_stale_states, data[0].__name__)
         self.log_current_states()
     
     # Main thread only: the list is not thread safe.
@@ -165,7 +165,7 @@ class StateQueue:
         self.last_requested_state = state
         while True:
             if self.logging_enabled:
-                self.logger.debug('requesting next item in queue with mode %d'%state)
+                self.logger.debug('requesting next item in queue with mode %d', state)
                 inmain(self.log_current_states)
             status,data = self.check_for_next_item(state)
             if not status:
@@ -729,7 +729,7 @@ class Tab:
                     logger.debug('Received quit signal')
                     break
                 args,kwargs = data
-                logger.debug('Processing event %s' % func.__name__)
+                logger.debug('Processing event %s', func.__name__)
                 self.state = f'{func.__name__} (GUI)'
                 # Run the state function in the Qt main thread.
                 generator = inmain(func,self,*args,**kwargs)
@@ -745,7 +745,7 @@ class Tab:
                         generator_running = False
                     while generator_running:
                         try:
-                            logger.debug('Instructing worker %s to do job %s'%(worker_process,worker_function) )
+                            logger.debug('Instructing worker %s to do job %s', worker_process, worker_function)
                             if worker_function == 'init':
                                 # Start the process before its init() runs.
                                 self.state = f'Starting worker process ({worker_process})'
@@ -785,7 +785,7 @@ class Tab:
                             # not-responding error.
                             self.hide_not_responding_error_until = 0
                                 
-                            logger.debug('returning worker results to function %s' % func.__name__)
+                            logger.debug('returning worker results to function %s', func.__name__)
                             self.state = f'{func.__name__} (GUI)'
                             next_yield = inmain(generator.send,results) 
                             if next_yield:
@@ -801,7 +801,7 @@ class Tab:
         except Exception:
             # Report the error, and leave the tab to be restarted.
             message = traceback.format_exc()
-            logger.critical('A fatal exception happened:\n %s'%message)
+            logger.critical('A fatal exception happened:\n %s', message)
             now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
             self.error_message += (f'Fatal exception in main process - {now}:<br /> '
                 f"<FONT COLOR='#ff0000'>{escape(message).replace(' ', '&nbsp;').replace('\n', '<br />')}</FONT><br />")
@@ -861,7 +861,7 @@ class Worker(Process):
         while True:
             self.logger.debug('Waiting for next job request')
             funcname, args, kwargs = self.from_parent.get()
-            self.logger.debug('Got job request %s' % funcname)
+            self.logger.debug('Got job request %s', funcname)
             try:
                 func = getattr(self,funcname)
                 success = True
@@ -869,11 +869,11 @@ class Worker(Process):
             except AttributeError:
                 success = False
                 message = traceback.format_exc()
-                self.logger.error('Couldn\'t start job:\n %s'%message)
+                self.logger.error("Couldn't start job:\n %s", message)
             # Acknowledge the job, telling the parent whether the method exists.
             self.to_parent.put((success,message,None))
             if success:
-                self.logger.debug('Starting job %s'%funcname)
+                self.logger.debug('Starting job %s', funcname)
                 try:
                     results = func(*args,**kwargs)
                     success = True
@@ -885,13 +885,13 @@ class Worker(Process):
                     traceback_lines = traceback.format_exception(*sys.exc_info())
                     del traceback_lines[1]
                     message = ''.join(traceback_lines)
-                    self.logger.error('Exception in job:\n%s'%message)
+                    self.logger.error('Exception in job:\n%s', message)
                 # The results must be picklable to go back to the parent.
                 try:
                     pickle.dumps(results)
                 except Exception:
                     message = traceback.format_exc()
-                    self.logger.error('Job returned unserialisable datatypes, cannot pass them back to parent.\n' + message)
+                    self.logger.error('Job returned unserialisable datatypes, cannot pass them back to parent.\n%s', message)
                     message = f'Attempt to pass unserialisable object {results!s} to parent process:\n' + message
                     success = False
                     results = None
@@ -1082,7 +1082,7 @@ class MyWorker(Worker):
         # modules here, not at the top of the file, so they load only in the worker
         # process, not in BLACS; `global` makes them visible to the other methods.
         global serial; import serial
-        self.logger.info('got x! %d' % self.x)
+        self.logger.info('got x! %d', self.x)
         # Fail now and then, to exercise error handling on init.
         import random
         if random.random() < 0.15:
@@ -1102,7 +1102,7 @@ class MyWorker(Worker):
         return 'results!!!'
         
     def baz(self,zzz,*args,**kwargs):
-        self.logger.debug('working on baz: time is %s'%repr(time.time()))
+        self.logger.debug('working on baz: time is %r', time.time())
         time.sleep(0.5)
         if kwargs['return_queue']:
             return queue.Queue()

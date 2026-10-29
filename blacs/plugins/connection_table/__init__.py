@@ -152,16 +152,16 @@ class RecompileNotification:
         
     def callback(self, name, info, event=None):
         if event  == 'deleted':
-            logger.info('{} {} ({})'.format(name, event, info))
+            logger.info('%s %s (%s)', name, event, info)
             inmain(self._show)
         if event  == 'modified':
-            logger.info('{} {} ({})'.format(name, event, info))
+            logger.info('%s %s (%s)', name, event, info)
             inmain(self._show)
         elif event  == 'original':
             logger.info('All watched files restored')
             inmain(self._close)
         elif event == 'restored':
-            logger.info('{} {} ({})'.format(name, event, info))
+            logger.info('%s %s (%s)', name, event, info)
         elif event ==  'debug':
             logger.info(info)
 
@@ -179,7 +179,7 @@ class RecompileNotification:
             )
         except labconfig.NoOptionError:
             polling_interval = 1
-        logger.info('Using hashable_types: {}; polling_interval: {}'.format(hashable_types, polling_interval))
+        logger.info('Using hashable_types: %s; polling_interval: %s', hashable_types, polling_interval)
         
         file_list += self.BLACS['settings'].get_value(Setting,'globals_list')
         calibration_list = self.BLACS['settings'].get_value(Setting,'calibrations_list')

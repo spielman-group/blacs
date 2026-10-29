@@ -95,7 +95,7 @@ class FrontPanelSettings:
                         settings,question,error = self.handle_return_code(data_dict,result,settings,question,error)
         except Exception as e:
             logger.info("Could not load saved settings")
-            logger.info(str(e))
+            logger.info('%s', e)
         not_restored = [
             f'{name} ({reason})' for name, (row, reason) in error.items()
         ] + [
@@ -249,7 +249,7 @@ class FrontPanelSettings:
                             if not silent:
                                 self.blacs.error_dialog("Front Panel not saved.", information=True)
                             else:
-                                logger.info("Front Panel not saved as it already existed in the h5 file '"+current_file+"'")
+                                logger.info("Front Panel not saved as it already existed in the h5 file '%s'", current_file)
                             return
                     else:
                         self.store_front_panel_in_h5(hdf5_file,states,tab_positions,window_data,plugin_data,save_conn_table)
@@ -260,7 +260,7 @@ class FrontPanelSettings:
                         information=True,
                     )
                 else:
-                    logger.info("Front Panel not saved as the connection table in the h5 file '"+current_file+"' didn't match the current connection table.")
+                    logger.info("Front Panel not saved as the connection table in the h5 file '%s' didn't match the current connection table.", current_file)
                 return
         else:
             with h5py.File(current_file,'w') as hdf5_file:
