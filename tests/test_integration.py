@@ -20,7 +20,6 @@ import unittest
 import labscript_utils.h5_lock  # must precede h5py, as it does in BLACS itself
 import h5py
 from qtutils.qt.QtWidgets import QApplication
-from labscript_utils.ls_zprocess import ZMQServer
 
 import fixtures
 import runmanager.__main__
@@ -175,10 +174,8 @@ class IntegrationFixture:
         self.real_runmanager_app = getattr(runmanager.__main__, 'app', None)
         runmanager.__main__.app = self.runmanager
         self.addCleanup(self.restore_runmanager_app)
-        # Built without runmanager's __init__, which binds its configured port.
-        self.runmanager_server = RunmanagerServer.__new__(RunmanagerServer)
-        ZMQServer.__init__(
-            self.runmanager_server, port=free_port(), bind_address='tcp://127.0.0.1'
+        self.runmanager_server = RunmanagerServer(
+            port=free_port(), bind_address='tcp://127.0.0.1'
         )
         self.addCleanup(self.runmanager_server.shutdown)
         port = self.runmanager_server.port
@@ -353,7 +350,7 @@ class SuccessfulShotTests(IntegrationFixture, unittest.TestCase):
         self.runmanager.queue_manager.enqueue(
             [{'path': first, 'compiled': True}, {'path': second, 'compiled': True}]
         )
-        shot_ids = [row['shot_id'] for row in self.runmanager.queue_controller.export_state()['items']]
+        shot_ids = [row['shot_id'] for row in self.runmanager.queue_controller.get_save_data()['items']]
 
         self.executor.requesting_shots = True
         self.run_loop(passes=3)
@@ -399,7 +396,7 @@ class LostReplyTests(IntegrationFixture, unittest.TestCase):
     def test_a_lost_offer_reply_costs_a_pass_and_not_the_shot(self):
         shot = self.make_shot_file('shot_a.h5')
         self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
-        offered_id = self.runmanager.queue_controller.export_state()['items'][0]['shot_id']
+        offered_id = self.runmanager.queue_controller.get_save_data()['items'][0]['shot_id']
         self.lose_next_reply()
 
         self.executor.requesting_shots = True
@@ -434,7 +431,7 @@ class FailureLatchTests(IntegrationFixture, unittest.TestCase):
         self.runmanager.queue_manager.enqueue(
             [{'path': shot, 'compiled': True}, {'path': later, 'compiled': True}]
         )
-        offered_id = self.runmanager.queue_controller.export_state()['items'][0]['shot_id']
+        offered_id = self.runmanager.queue_controller.get_save_data()['items'][0]['shot_id']
         self.abort_next_shot = True
 
         self.executor.requesting_shots = True
