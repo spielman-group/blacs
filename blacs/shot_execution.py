@@ -767,7 +767,7 @@ class ShotExecutor:
                     
                     experiment_finished_notifications = queue.Queue()
                     logger.debug('About to start the master pseudoclock')
-                    run_time = datetime.datetime.now()
+                    run_time = datetime.datetime.now().astimezone()
 
                     plugins.manager.fire_event('science_starting', path)
 
@@ -863,7 +863,7 @@ class ShotExecutor:
                         )
 
                         data_group = hdf5_file['/'].require_group('data')
-                        hdf5_file.attrs['run time'] = run_time.strftime('%Y%m%dT%H%M%S.%f')
+                        hdf5_file.attrs['run time'] = run_time.strftime('%Y%m%dT%H%M%S.%f%z')
         
                     error_condition = False
                     error_devices = []
