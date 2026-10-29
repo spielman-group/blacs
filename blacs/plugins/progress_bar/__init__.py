@@ -11,14 +11,15 @@
 #                                                                   #
 #####################################################################
 import logging
+import math
 import os
 import threading
 import time
-from queue import Queue, Empty
+from queue import Queue
 
 import numpy as np
 
-from qtutils import UiLoader, inmain, inmain_decorator
+from qtutils import UiLoader, inmain_later
 from qtutils.icons import Icon
 from qtutils.qt import QtGui, QtWidgets, QtCore
 
@@ -41,8 +42,15 @@ logger = logging.getLogger(f'BLACS.plugin.{module}')
 UPDATE_INTERVAL = 0.02
 BAR_MAX = 1000
 
+# How long each wait lasts on the bar when the wait monitor posts no wait
+# completed events:
+UNMONITORED_WAIT_DURATION = 0.1
+
 
 class Plugin(BasePlugin):
+    """The bar runs on a main-thread timer; a thread of its own reads each shot
+    file, so the shot loop never waits on it."""
+
     def __init__(self):
         self.BLACS = None
         self.command_queue = Queue()
@@ -56,10 +64,13 @@ class Plugin(BasePlugin):
         self.next_marker_index = None
         self.bar_text_prefix = None
         self.h5_filepath = None
+        self.wait_start_time = None
+        self.next_thing = None
+        self.timer = None
         self.wait_completed_events_supported = False
         self.wait_completed = Event('wait_completed', role='wait')
-        self.mainloop_thread = threading.Thread(target=self.mainloop)
-        self.mainloop_thread.daemon = True
+        self.command_thread = threading.Thread(target=self.command_loop)
+        self.command_thread.daemon = True
         
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
@@ -91,8 +102,12 @@ class Plugin(BasePlugin):
                     if props.get('wait_monitor_supports_wait_completed_events', False):
                         self.wait_completed_events_supported = True
 
-        self.ui.wait_warning.hide()
-        self.mainloop_thread.start()
+        self.timer = QtCore.QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.setTimerType(QtCore.Qt.PreciseTimer)
+        self.timer.timeout.connect(self.on_timeout)
+        self.clear_bar()
+        self.command_thread.start()
 
     def get_event_handlers(self):
         return {'science_over': self.on_science_over,
@@ -108,7 +123,6 @@ class Plugin(BasePlugin):
     def on_science_over(self, h5_filepath):
         self.command_queue.put(('stop', None))
 
-    @inmain_decorator(True)
     def clear_bar(self):
         self.bar.setEnabled(False)
         self.bar.setFormat('No shot running')
@@ -138,7 +152,6 @@ class Plugin(BasePlugin):
         else:
             return 'marker', max(0, next_marker_time - labscript_time)
 
-    @inmain_decorator(True)
     def update_bar_style(self, marker=False, wait=False, previous=False):
         """Style the bar for the next marker or wait; with previous=True, for the
         current one."""
@@ -193,7 +206,6 @@ class Plugin(BasePlugin):
             self.bar_text_prefix = None
             self.bar.setPalette(self.style.standardPalette())
 
-    @inmain_decorator(True)
     def update_bar_value(self, marker=False, wait=False):
         """Show the time elapsed; with marker or wait, the exact time of the next
         marker or wait instead of the current time."""
@@ -207,36 +219,81 @@ class Plugin(BasePlugin):
         else:
             labscript_time = time.time() - self.shot_start_time - self.time_spent_waiting
         value = int(round(labscript_time / self.stop_time * BAR_MAX))
-        self.bar.setValue(value)
-
         text = (f'{labscript_time:.2f}{thinspace}s / {self.stop_time:.2f}{thinspace}s '
                 f'(%p{thinspace}%)')
         if self.bar_text_prefix is not None:
             text = self.bar_text_prefix + text
-        self.bar.setFormat(text)
+        # setValue() repaints the bar at once. With updates off, the event loop
+        # repaints it once, with both changes:
+        self.bar.setUpdatesEnabled(False)
+        try:
+            self.bar.setValue(value)
+            self.bar.setFormat(text)
+        finally:
+            self.bar.setUpdatesEnabled(True)
 
-    def _start(self, h5_filepath):
-        """Called from the mainloop when starting a shot"""
-        self.h5_filepath = h5_filepath
+    def read_shot_file(self, h5_filepath):
+        """Return the shot's stop time, markers and waits, and the time it is taken
+        to have started."""
         with h5py.File(h5_filepath, 'r') as f:
             props = properties.get(f, self.master_pseudoclock, 'device_properties')
-            self.stop_time = props['stop_time']
+            stop_time = props['stop_time']
             try:
-                self.markers = f['time_markers'][:]
-                self.markers.sort(order='time')
+                markers = f['time_markers'][:]
+                markers.sort(order='time')
             except KeyError:
-                self.markers = None
+                markers = None
             try:
-                self.waits = f['waits'][:]
+                waits = f['waits'][:]
             except KeyError:
-                self.waits = None
-        self.shot_start_time = time.time()
-        self.time_spent_waiting = 0
-        self.next_marker_index = 0
-        self.next_wait_index = 0
+                waits = None
+        return stop_time, markers, waits, time.time()
 
-    def _stop(self):
-        """Called from the mainloop when ending a shot"""
+    def command_loop(self):
+        """Read each shot file, and pass each shot's start and stop to the main
+        thread in the order they came."""
+        while True:
+            command, h5_filepath = self.command_queue.get()
+            if command == 'close':
+                break
+            elif command == 'start':
+                try:
+                    shot = self.read_shot_file(h5_filepath)
+                except Exception:
+                    logger.exception("Could not read shot file.")
+                    inmain_later(self.show_error)
+                else:
+                    inmain_later(self.start_shot, h5_filepath, *shot)
+            elif command == 'stop':
+                inmain_later(self.stop_shot)
+            else:
+                raise ValueError(command)
+
+    def start_shot(self, h5_filepath, stop_time, markers, waits, shot_start_time):
+        try:
+            self.h5_filepath = h5_filepath
+            self.stop_time = stop_time
+            self.markers = markers
+            self.waits = waits
+            self.shot_start_time = shot_start_time
+            self.time_spent_waiting = 0
+            self.next_marker_index = 0
+            self.next_wait_index = 0
+            self.update_bar_value()
+            if (
+                self.waits is not None
+                and len(self.waits) > 0
+                and not self.wait_completed_events_supported
+            ):
+                self.ui.wait_warning.show()
+            self.schedule_next_thing()
+        except Exception:
+            logger.exception("Exception starting shot, ignoring.")
+            self.show_error()
+
+    def stop_shot(self):
+        self.timer.stop()
+        self.clear_bar()
         self.h5_filepath = None
         self.shot_start_time = None
         self.stop_time = None
@@ -246,81 +303,57 @@ class Plugin(BasePlugin):
         self.next_wait_index = None
         self.next_marker_index = None
         self.bar_text_prefix = None
+        self.wait_start_time = None
+        self.next_thing = None
 
-    def mainloop(self):
-        running = False
-        self.clear_bar()
-        while True:
-            try:
-                if running:
-                    next_thing, timeout = self.get_next_thing()
-                    try:
-                        command, _ = self.command_queue.get(timeout=timeout)
-                    except Empty:
-                        if next_thing == 'update':
-                            self.update_bar_value()
-                        if next_thing == 'marker':
-                            self.update_bar_style(marker=True)
-                            self.update_bar_value(marker=True)
-                            self.next_marker_index += 1
-                        elif next_thing == 'wait':
-                            wait_start_time = time.time()
-                            self.update_bar_style(wait=True)
-                            self.update_bar_value(wait=True)
-                            self.next_wait_index += 1
-                            # wait for the wait to complete, but abandon
-                            # processing if the command queue is non-empty,
-                            # i.e. if a stop command is sent.
-                            while self.command_queue.empty():
-                                try:
-                                    # Wait for only 0.1 sec at a time, so that
-                                    # we can check if the queue is empty in between:
-                                    self.wait_completed.wait(self.h5_filepath, timeout=0.1)
-                                except TimeoutError:
-                                    # Only wait for wait completed events if the wait monitor
-                                    # device supports them; otherwise skip after this first
-                                    # timeout, so the wait looks 0.1 sec long.
-                                    if self.wait_completed_events_supported:
-                                        continue
-                                # The wait completed (or completion events are not
-                                # supported):
-                                self.time_spent_waiting += time.time() - wait_start_time
-                                # Set the bar style back to whatever the
-                                # previous marker was, if any:
-                                self.update_bar_style(marker=True, previous=True)
-                                self.update_bar_value()
-                                break
-                        continue
-                else:
-                    command, h5_filepath = self.command_queue.get()
-                if command == 'close':
-                    break
-                elif command == 'start':
-                    assert not running
-                    running = True
-                    self._start(h5_filepath)
-                    self.update_bar_value()
-                    if (
-                        self.waits is not None
-                        and len(self.waits) > 0
-                        and not self.wait_completed_events_supported
-                    ):
-                        inmain(self.ui.wait_warning.show)
-                elif command == 'stop':
-                    self.clear_bar()
-                    running = False
-                    self._stop()
-                else:
-                    raise ValueError(command)
-            except Exception:
-                logger.exception("Exception in mainloop, ignoring.")
-                # Stop processing of the current shot, if any.
-                self.clear_bar()
-                inmain(self.bar.setFormat, "Error in progress bar plugin")
-                running = False
-                self._stop()
+    def show_error(self):
+        """Stop showing the current shot, if any, and show an error on the bar."""
+        self.stop_shot()
+        self.bar.setFormat("Error in progress bar plugin")
+
+    def schedule_next_thing(self):
+        """Time the next update, marker or wait; during a wait, the next check of
+        whether it has completed."""
+        if self.wait_start_time is not None:
+            self.next_thing, timeout = 'wait_check', UPDATE_INTERVAL
+        else:
+            self.next_thing, timeout = self.get_next_thing()
+        self.timer.start(math.ceil(timeout * 1000))
+
+    def wait_has_completed(self):
+        try:
+            self.wait_completed.wait(self.h5_filepath, timeout=0)
+            return True
+        except TimeoutError:
+            if self.wait_completed_events_supported:
+                return False
+            return time.time() - self.wait_start_time >= UNMONITORED_WAIT_DURATION
+
+    def on_timeout(self):
+        try:
+            if self.next_thing == 'update':
+                self.update_bar_value()
+            elif self.next_thing == 'marker':
+                self.update_bar_style(marker=True)
+                self.update_bar_value(marker=True)
+                self.next_marker_index += 1
+            elif self.next_thing == 'wait':
+                self.wait_start_time = time.time()
+                self.update_bar_style(wait=True)
+                self.update_bar_value(wait=True)
+                self.next_wait_index += 1
+            if self.wait_start_time is not None and self.wait_has_completed():
+                self.time_spent_waiting += time.time() - self.wait_start_time
+                self.wait_start_time = None
+                # Back to the previous marker's style, if any:
+                self.update_bar_style(marker=True, previous=True)
+                self.update_bar_value()
+            self.schedule_next_thing()
+        except Exception:
+            logger.exception("Exception updating progress bar, ignoring.")
+            self.show_error()
     
     def close(self):
+        self.timer.stop()
         self.command_queue.put(('close', None))
-        self.mainloop_thread.join()
-
+        self.command_thread.join()
