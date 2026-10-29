@@ -21,6 +21,7 @@ import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from blacs.compile_and_restart import CompileAndRestart
 from runmanager.globals_file import default_toml_path
 from labscript_utils.filewatcher import FileWatcher
+from labscript_utils.labconfig import LabConfig
 from labscript_utils.text_editor import open_in_editor
 from qtutils import inmain, UiLoader
 from blacs.plugins import PLUGINS_DIR, PLUGIN_CONFIG_SECTION, BasePlugin
@@ -346,7 +347,11 @@ class Setting:
         
     def add_global_file(self,*args,**kwargs):
         selected_files = file_dialogs.open_files(
-            None, "select globals files", "C:\\", "Globals files (*.toml *.h5 *.hdf5)"
+            None,
+            "select globals files",
+            # Where runmanager's globals dialogs open too.
+            LabConfig().get('paths', 'experiment_shot_storage', fallback=''),
+            "Globals files (*.toml *.h5 *.hdf5)",
         )
         if selected_files is not None:
             for filepath in selected_files:
@@ -376,7 +381,10 @@ class Setting:
             
     def add_calibration_file(self):
         selected_files = file_dialogs.open_files(
-            None, "Select unit conversion scripts", "C:\\", "Python files (*.py *.pyw)"
+            None,
+            "Select unit conversion scripts",
+            LabConfig().get('paths', 'userlib', fallback=''),
+            "Python files (*.py *.pyw)",
         )
         if selected_files is not None:
             for filepath in selected_files:
@@ -392,7 +400,7 @@ class Setting:
         
     def add_calibration_folder(self):
         filepath = file_dialogs.choose_folder(
-            None, "Select unit conversion folder", "C:\\"
+            None, "Select unit conversion folder", LabConfig().get('paths', 'userlib', fallback='')
         )
         if filepath is not None:
             if not self.is_filepath_in_store(filepath,'calibrations'):
