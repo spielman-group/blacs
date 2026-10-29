@@ -25,29 +25,31 @@ purpose. It is deleted when the pass is done.
 
 ## Upstream
 
-CodeHealth carries, ported by hand and credited in each commit, upstream's
-fixes for bugs it shared: 9ea53bf, e35dfff, 8bfadff with 0c1bb86, 4a6562a,
-9df6180, 1126665, the open parts of 634f0cc with 9fa23e7, 803cf93, ecb3bef,
-609a930 and 4692a8b; closing BLACS aborting the shot in hand (d67dbe4, adapted:
-the shot is reported `aborted`, which runmanager handles as any abort); the
-exit before any tab when another BLACS holds the port (074dcda); the 2x
-icons (7a8f018); the progress bar on a main-thread timer (5a226bb, 763bff2);
-the digital output colours made from the palette (e8d59dc); and the event loop
-in `exec_qapplication`, which deletes the windows after it (c3e319e). The
-floors are Python 3.13, qtutils 4.4.1 and zprocess 3.0.1.
+`master` is upstream's. CodeHealth stays as close to upstream as the fork's
+design allows, and carries upstream's fixes in upstream's form, ported by hand
+and credited in each commit: 9ea53bf, e35dfff, 8bfadff with 0c1bb86, 4a6562a,
+9df6180, 1126665, 634f0cc with 9fa23e7, 803cf93, ecb3bef, 609a930, 4692a8b,
+d67dbe4 (adapted: the shot is reported `aborted`, which runmanager handles as
+any abort), 074dcda, 7a8f018, 5a226bb with 763bff2, e8d59dc, c3e319e (Ctrl-C
+closes the window), 177f213, 8ff163e, the loop-wide handler of 80a3f0d,
+0636b34, 7719dee with d2e7675, 7918c4d, 23376cd (with every logging call of the
+fork's) and 79d460e's classifiers. The floors are Python 3.13, qtutils 4.4.1
+and zprocess 3.0.1.
 
-Not taken:
+Not ported:
 
-- `setup_application()` (0636b34) waits for labscript-utils' word.
 - The tab state machine on the main thread (4c0f058, bfaaf25, f89cc2b), with
   workers ended by a quit message and the Stop button (69a2dd3, d00b690), waits
-  for its design's review: `DESIGN_TAB_STATE_MACHINE.md`.
-- The run time's UTC offset (7918c4d, with lyse and runmanager) and
-  `excepthook.install()` (d2e7675, 7719dee) are design or dependency work for
-  Ian. Opening a shot file once (5689970) is deferred (Ian).
-- Upstream's queue, analysis submission and pushed-shot changes, which
-  runmanager owns here, and 177f213 and 8ff163e, which contradict
-  `shot-management.rst` and the shot file's `/front_panel` format.
+  for its design's review: `DESIGN_TAB_STATE_MACHINE.md`. b52c85a, the shot's
+  tab transitions on the main thread, builds on it.
+- Opening a shot file once (5689970) is deferred (Ian).
+- BLACS has no queue, analysis submission or pushed shots, which runmanager
+  owns here: 2b6ec46, a10b3f8, 9bc1131, 1612e88, 66a7f4a, 6de2b2b, 905a1fe,
+  9c6cf2b, and the queue half of 56a54c2.
+- The window is restored through `LabscriptGuiApplication`'s shared geometry
+  (Ian), not Qt's saved geometry: 6165951, 850e3cb.
+- ce9a10a's `open_file` is reached through `open_in_editor`, shared by the
+  applications (Ian).
 
 ## Left as it is
 
