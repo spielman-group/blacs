@@ -19,6 +19,7 @@ from queue import Queue, Empty
 import numpy as np
 
 from qtutils import UiLoader, inmain, inmain_decorator
+from qtutils.icons import Icon
 from qtutils.qt import QtGui, QtWidgets, QtCore
 
 import labscript_utils.h5_lock
@@ -64,6 +65,7 @@ class Plugin(BasePlugin):
         self.BLACS = BLACS
         self.ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'controls.ui'))
         self.bar = self.ui.bar
+        self.ui.wait_warning.setIcon(Icon(':/qtutils/fugue/clock--exclamation'))
         self.style = QtWidgets.QStyleFactory.create('Fusion')
         if self.style is None:
             # If we're on Qt4, fall back to Plastique style:

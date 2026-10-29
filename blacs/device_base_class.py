@@ -17,7 +17,7 @@ import time
 from queue import Queue
 
 from qtutils.qt.QtCore import QTimer
-from qtutils.qt.QtGui import QIcon
+from qtutils.icons import Icon
 from qtutils.qt.QtWidgets import (
     QWidget,
     QSpacerItem,
@@ -557,7 +557,7 @@ class DeviceTab(Tab):
         
             buttonWidget = QWidget()
             buttonlayout = QHBoxLayout(buttonWidget)
-            button = QPushButton(QIcon(':/qtutils/fugue/arrow-turn-000-left'), "Apply")
+            button = QPushButton(Icon(':/qtutils/fugue/arrow-turn-000-left'), "Apply")
             button.clicked.connect(self.on_resolve_value_inconsistency)
             buttonlayout.addWidget(button)
             buttonlayout.addStretch()

@@ -42,7 +42,8 @@ SHOT_STOP_TIMEOUT = 30
 from qtutils import inmain_later, inthread, UiLoader
 import qtutils.icons  # import has side-effects we rely on
 from qtutils.qt.QtCore import QTimer, Qt, qVersion
-from qtutils.qt.QtGui import QIcon, QColor, QPalette
+from qtutils.qt.QtGui import QColor, QPalette
+from qtutils.icons import Icon
 from qtutils.qt.QtWidgets import (
     QMainWindow,
     QApplication
@@ -305,7 +306,7 @@ class BLACS(LabscriptGuiApplication):
         blacs_data['settings'] = self.settings
 
         # Plugins add their menus, preferences pages and notifications here:
-        menus = MenuContext(logger=logger, icon_factory=QIcon)
+        menus = MenuContext(logger=logger, icon_factory=Icon)
         menus.register_location('menubar', self.ui.menubar)
         plugins.manager.register_context('menus', menus)
         plugins.manager.register_context('settings', self.settings)

@@ -25,7 +25,8 @@ from types import GeneratorType
 from bisect import insort
 
 from qtutils.qt.QtCore import Qt, QTimer
-from qtutils.qt.QtGui import QIcon, QColor, QPalette
+from qtutils.qt.QtGui import QColor, QPalette
+from qtutils.icons import Icon
 from qtutils.qt.QtWidgets import QLabel, QWidget, QPushButton, QApplication, QVBoxLayout
 
 from qtutils import inmain_decorator, inmain, inthread, UiLoader
@@ -399,7 +400,7 @@ class Tab:
             if currentpage == -1:
                 # shutting down:
                 return
-            icon = QIcon(self._tab_icon)
+            icon = Icon(self._tab_icon)
             self.notebook.tabBar().setTabIcon(currentpage, icon)
             self.notebook.tabBar().setTabTextColor(currentpage, self._tab_text_colour)
     
@@ -572,7 +573,7 @@ class Tab:
             temp_widget = QLabel("Waiting for tab mainloop and worker(s) to exit")
             temp_widget.setAlignment(Qt.AlignCenter)
             self.notebook.insertTab(currentpage, temp_widget, f'[{self.device_name}]')
-            self.notebook.tabBar().setTabIcon(currentpage, QIcon(self.ICON_BUSY))
+            self.notebook.tabBar().setTabIcon(currentpage, Icon(self.ICON_BUSY))
             self.notebook.tabBar().setTabTextColor(currentpage, QColor('grey'))
             self.notebook.setCurrentWidget(temp_widget)  
         if finalise:
@@ -922,7 +923,7 @@ class PluginTab:
             if currentpage == -1:
                 # shutting down:
                 return
-            icon = QIcon(self._tab_icon)
+            icon = Icon(self._tab_icon)
             self.notebook.tabBar().setTabIcon(currentpage, icon)
             self.notebook.tabBar().setTabTextColor(currentpage, QColor(self._tab_text_colour))
 
