@@ -96,7 +96,7 @@ from labscript_utils.connections import ConnectionTable
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
-from labscript_utils.qtwidgets.application import LabscriptGuiApplication
+from labscript_utils.qtwidgets.application import LabscriptGuiApplication, exec_qapplication
 from labscript_utils.labconfig import LabConfig, get_default_appconfig_file
 from labscript_utils.plugins import MenuContext
 from labscript_profile import hostname
@@ -608,4 +608,6 @@ if __name__ == '__main__':
 
     splash.hide()
 
-    sys.exit(qapplication.exec())
+    # Ctrl-C closes the window, so it saves the front panel and shuts down the
+    # workers as closing it does.
+    sys.exit(exec_qapplication(qapplication, on_interrupt=app.ui.close))
