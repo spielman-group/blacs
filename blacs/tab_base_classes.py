@@ -900,6 +900,9 @@ class PluginTab:
 
         self._ui = UiLoader().load(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plugin_tab_frame.ui'))
         self._layout = self._ui.device_layout
+        # Read by set_tab_icon_and_colour and on a theme change, as a device tab's are.
+        self._tab_icon = ''
+        self._tab_text_colour = self._ui.palette().color(QPalette.ColorRole.Text)
 
         self._ui.device_name.setText(f"<b>{self.tab_name}</b> [Plugin]")
         elide_label(self._ui.device_name, self._ui.horizontalLayout, Qt.ElideRight)
