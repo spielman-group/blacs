@@ -360,8 +360,8 @@ class ShotExecutor:
         return next_path, index
         
     def clean_h5_file(self, h5file, new_h5_file, repeat_number=0):
-        """Copy a shot file without run data, keeping root attributes and setting
-        ``run repeat``."""
+        """Copy a shot file without run data or ``run time``, keeping the other root
+        attributes and setting ``run repeat``."""
         try:
             with h5py.File(h5file, 'r') as old_file:
                 with h5py.File(new_h5_file, 'w') as new_file:
@@ -380,7 +380,8 @@ class ShotExecutor:
                         if group in old_file:
                             new_file.copy(old_file[group], group)
                     for name in old_file.attrs:
-                        new_file.attrs[name] = old_file.attrs[name]
+                        if name != 'run time':
+                            new_file.attrs[name] = old_file.attrs[name]
                     new_file.attrs['run repeat'] = repeat_number
         except Exception:
             self._logger.exception('Clean H5 File Error.')

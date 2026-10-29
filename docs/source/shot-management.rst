@@ -77,8 +77,8 @@ fresh numbered ``_repXXXXX.h5``, without the data of the run already there, and
 runs the copy. Every root attribute the shot file carried crosses over
 untouched, ``shot_id`` among them, because it is the same shot — BLACS does not
 interpret those attributes and could put nothing in the place of one it
-dropped. That includes the earlier run's ``run time``, until the copy's own run
-writes it again. What BLACS writes itself is ``run repeat``, the number of the
+dropped. The one left out is the earlier run's ``run time``, which the copy's
+own run writes. What BLACS writes itself is ``run repeat``, the number of the
 copy, and that is the field which tells the files of one shot apart. So a root
 attribute naming a shot names the shot and not the file: anything accumulating
 or averaging over results has to read the repeat number as well, or it counts
