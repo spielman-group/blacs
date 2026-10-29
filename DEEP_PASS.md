@@ -51,6 +51,17 @@ Not ported:
 - ce9a10a's `open_file` is reached through `open_in_editor`, shared by the
   applications (Ian).
 
+## Compatibility
+
+The campaign and the upstream stage keep no alias, old import path, shim,
+legacy keyword or deprecation path. `blacs.plugins` re-exports
+`labscript_utils.plugins`' `callback`, `Callback` and `DEFAULT_PRIORITY`, which
+upstream defines there, and `BasePlugin` beside them. One fallback for an old
+saved file waits for Ian: the connection table plugin takes a `.h5` globals
+file, in its saved list or its file dialog, as the TOML file runmanager made
+from it (`normalize_globals_path`), so a settings file saved before the TOML
+globals keeps its globals list.
+
 ## Left as it is
 
 - Guards at a real boundary: `runmanager_rpc`'s catch and log-once,
