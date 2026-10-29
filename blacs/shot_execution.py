@@ -69,6 +69,15 @@ NOT_REQUESTING = 'Not requesting shots'
 PublishedStatus = namedtuple('PublishedStatus', ['text', 'shot_filepath', 'shot_id'])
 
 
+def device_status(names, description):
+    """Say which devices a failure was in, as 'Device a ...' or 'Devices a, b ...'."""
+    names = sorted(set(names))
+    if not names:
+        return f'Device(s) {description}'
+    noun = 'Device' if len(names) == 1 else 'Devices'
+    return f"{noun} {', '.join(names)} {description}"
+
+
 class ShotExecutor:
 
     # Deadline for the last exchange, which hands over an outcome held as the
@@ -618,6 +627,8 @@ class ShotExecutor:
                 error_condition = False
                 abort = False
                 restarted = False
+                error_devices = []
+                restarted_devices = []
                 self.set_status("Transitioning to buffered...", path)
                 
                 inmain(self._ui.shot_abort_button.clicked.connect,abort_function)
@@ -654,10 +665,12 @@ class ShotExecutor:
                                 if not success:
                                     logger.error('%s has an error condition, aborting run' % name)
                                     error_condition = True
+                                    error_devices.append(name)
                                     break
                             except Exception:
                                 logger.exception('Exception while transitioning %s to buffered mode.'%(name))
                                 error_condition = True
+                                error_devices.append(name)
                                 break
                         if error_condition:
                             break
@@ -674,10 +687,12 @@ class ShotExecutor:
                         if result == 'fail':
                             logger.info('abort signal received during transition to buffered of %s' % device_name)
                             error_condition = True
+                            error_devices.append(device_name)
                             break
                         elif result == 'restart':
                             logger.info('Device %s was restarted, aborting shot.'%device_name)
                             restarted = True
+                            restarted_devices.append(device_name)
                             break
                             
                         logger.debug('%s finished transitioning to buffered mode' % device_name)
@@ -686,6 +701,7 @@ class ShotExecutor:
                         if self.get_device_error_state(device_name,transition_list):
                             logger.error('%s has an error condition, aborting run' % device_name)
                             error_condition = True
+                            error_devices.append(device_name)
                             break
 
                         del transition_list[device_name]
@@ -694,8 +710,9 @@ class ShotExecutor:
                         # transitioning to buffered. Is there an error?
                         for name in transition_list:
                             if self.get_device_error_state(name,transition_list):
+                                logger.error('%s has an error condition, aborting run' % name)
                                 error_condition = True
-                                break
+                                error_devices.append(name)
                                 
                         if error_condition:
                             break
@@ -711,20 +728,17 @@ class ShotExecutor:
                     # another is asked for.
                     outcome_path = path
                     if timed_out:
-                        status_text = "Programming timed out\nRequests stopped"
-                        outcome_status, reason = BLACS_FAILED, 'Programming timed out'
+                        outcome_status, reason = BLACS_FAILED, device_status(
+                            transition_list, 'timed out programming')
                     elif abort:
-                        status_text = "Aborted\nRequests stopped"
                         outcome_status, reason = BLACS_ABORTED, 'Aborted'
                     elif restarted:
-                        status_text = ("Device restarted in transition to\nbuffered. "
-                                       "Aborted. Requests stopped.")
-                        outcome_status, reason = (
-                            BLACS_FAILED, 'Device restarted while transitioning to buffered')
+                        outcome_status, reason = BLACS_FAILED, device_status(
+                            restarted_devices, 'restarted while transitioning to buffered')
                     else:
-                        status_text = "Device(s) in error state\nRequests stopped"
-                        outcome_status, reason = BLACS_FAILED, 'Device(s) in error state'
-                    self.set_status(status_text)
+                        outcome_status, reason = BLACS_FAILED, device_status(
+                            error_devices, 'in error state')
+                    self.set_status(f"{reason}\nRequests stopped")
                     self.stop_requesting_shots(reason)
                     self.report_shot_outcome(outcome_path, outcome_status, reason)
 
@@ -761,6 +775,8 @@ class ShotExecutor:
                 abort = False
                 restarted = False
                 done = False
+                error_devices = []
+                restarted_devices = []
                 while not (abort or restarted or done):
                     try:
                         done = (
@@ -776,9 +792,12 @@ class ShotExecutor:
                             abort = True
                         if result == 'restart':
                             restarted = True
+                            restarted_devices.append(device_name)
                         for device_name, tab in devices_in_use.items():
                             if self.get_device_error_state(device_name,devices_in_use):
+                                logger.error('%s has an error condition, aborting run' % device_name)
                                 restarted = True
+                                error_devices.append(device_name)
                     except queue.Empty:
                         pass
                         
@@ -791,11 +810,14 @@ class ShotExecutor:
                 inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                 inmain(self._ui.shot_abort_button.setEnabled,False)
                 
-                if restarted:                    
-                    self.stop_requesting_shots('Device restarted during the run')
-                    self.set_status("Device restarted during run.\nAborted. Requests stopped")
-                    self.report_shot_outcome(
-                        path, BLACS_FAILED, 'Device restarted during the run')
+                if restarted:
+                    if error_devices:
+                        reason = device_status(error_devices, 'in error state during the run')
+                    else:
+                        reason = device_status(restarted_devices, 'restarted during the run')
+                    self.stop_requesting_shots(reason)
+                    self.set_status(f"{reason}\nRequests stopped")
+                    self.report_shot_outcome(path, BLACS_FAILED, reason)
                 elif abort:
                     # Stop as for any other shot that did not complete, so
                     # runmanager decides whether it goes back in the queue:
@@ -846,6 +868,7 @@ class ShotExecutor:
                     hdf5_file.attrs['run time'] = run_time.strftime('%Y%m%dT%H%M%S.%f')
         
                 error_condition = False
+                error_devices = []
                 response_list = {}
                 # If one device fails we still transition the rest to manual mode.
                 while stop_groups:
@@ -861,6 +884,7 @@ class ShotExecutor:
                         except Exception:
                             logger.exception('Exception while transitioning %s to manual mode.'%(name))
                             error_condition = True
+                            error_devices.append(name)
                     logged_waiting = None
                     while transition_list:
                         # Logged when the list changes, not at each 2 s check.
@@ -879,6 +903,7 @@ class ShotExecutor:
                             for name in transition_list.copy():
                                 if self.get_device_error_state(name, transition_list):
                                     error_condition = True
+                                    error_devices.append(name)
                                     logger.debug('%s is in an error state' % name)
                                     response_list[name] = 'error'
                                     inmain(transition_list[name].disconnect_restart_receiver, restart_function)
@@ -890,12 +915,15 @@ class ShotExecutor:
                         response_list[name] = result
                         if result == 'fail':
                             error_condition = True
+                            error_devices.append(name)
                             logger.debug('%s failed to transition to manual' % name)
                         elif result == 'restart':
                             error_condition = True
+                            error_devices.append(name)
                             logger.debug('%s restarted during transition to manual' % name)
                         elif self.get_device_error_state(name, devices_in_use):
                             error_condition = True
+                            error_devices.append(name)
                             logger.debug('%s is in an error state' % name)
                         else:
                             logger.debug('%s finished transitioning to manual mode' % name)
@@ -905,8 +933,8 @@ class ShotExecutor:
                         transition_list.pop(name, None)
                     
                 if error_condition:
-                    reason = 'Device(s) reported an error after the run'
-                    self.set_status("Error in transition to manual\nRequests stopped")
+                    reason = device_status(error_devices, 'reported an error after the run')
+                    self.set_status(f"{reason}\nRequests stopped")
 
             except Exception:
                 error_condition = True
