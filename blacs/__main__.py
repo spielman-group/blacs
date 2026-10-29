@@ -345,6 +345,10 @@ class BLACS(LabscriptGuiApplication):
             logger.exception('Unable to restore the window geometry.')
 
     def order_tabs(self,tab_data):
+        # Shot files do not contain tab positions.
+        if not any('notebook' in data for data in tab_data.values()):
+            return
+
         # Move each tab to its saved notebook.
         for tab_name in self.tablist.keys():
             notebook_num = 0
@@ -404,7 +408,7 @@ class BLACS(LabscriptGuiApplication):
             if filepath.endswith('.h5') or filepath.endswith('.hdf5'):
                 try:
                     if self.question_dialog("""Warning: This will modify front panel values and cause device output values to update.
-                    \nShot execution state will be replaced.
+                    \nIf the file is a BLACS settings file, the shot execution settings will be replaced by those in the file.
                     \n
                     \nNote: Channels that are locked will not be updated.\n\nDo you wish to continue?"""):
                         front_panel_settings = FrontPanelSettings(filepath, self.connection_table)
@@ -417,11 +421,13 @@ class BLACS(LabscriptGuiApplication):
                         self.shot_executor.restore_save_data(
                             self._restore_shot_execution_data(tab_data['BLACS settings'])
                         )
-                        plugins.manager.restore_save_data(
-                            ast.literal_eval(tab_data['BLACS settings'].get('plugin_data', '{}'))
-                        )
+                        # A shot file has no plugin data, and leaves the plugins as they are.
+                        if 'plugin_data' in tab_data['BLACS settings']:
+                            plugins.manager.restore_save_data(
+                                ast.literal_eval(tab_data['BLACS settings']['plugin_data'])
+                            )
                 except Exception as e:
-                    logger.exception("Unable to load the front panel in %s."%(filepath))
+                    logger.exception("Unable to load the front panel in %s.", filepath)
                     self.error_dialog(f"Unable to load the front panel. The error encountered is printed below.\n\n{e}", information=True)
             else:
                 self.error_dialog("You did not select a file ending with .h5 or .hdf5. Please try again", information=True)

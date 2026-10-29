@@ -81,6 +81,23 @@ class SaveAndRestoreTests(unittest.TestCase):
         self.assertEqual(ensure_str(notebook[0]['notebook']), '1')
         self.assertEqual(eval(ensure_str(notebook[0]['data'])), {'a key': 'a value'})
 
+    def test_a_shot_file_holds_only_front_panel_values_and_device_settings(self):
+        tab_data, _, _ = a_front_panel()
+        with h5py.File(self.path, 'w') as h5_file:
+            self.settings.store_shot_front_panel_in_h5(h5_file, tab_data)
+
+        with h5py.File(self.path, 'r') as h5_file:
+            self.assertEqual(set(h5_file['front_panel']), {'front_panel', '_notebook_data'})
+            notebook = h5_file['front_panel/_notebook_data']
+            self.assertEqual(dict(notebook.attrs), {})
+            self.assertEqual(notebook.dtype.names, ('tab_name', 'data'))
+            front_panel = h5_file['front_panel/front_panel'][:]
+            notebook = notebook[:]
+
+        self.assertEqual(front_panel[0]['base_value'], 1.5)
+        self.assertEqual(ensure_str(notebook[0]['tab_name']), 'fake_device')
+        self.assertEqual(eval(ensure_str(notebook[0]['data'])), {'a key': 'a value'})
+
 
 class LoadIntoRunningPluginTests(unittest.TestCase):
     def test_a_loaded_front_panel_sets_the_running_repeated_shot_limit(self):

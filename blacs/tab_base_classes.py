@@ -314,20 +314,26 @@ class Tab:
         return {'_terminal_visible': self._ui.button_show_terminal.isChecked(),
                 '_splitter_sizes': self._ui.splitter.sizes()}
 
-    def get_all_save_data(self):
-        save_data = self.get_builtin_save_data()
+    def get_device_save_data(self):
+        """Get the settings returned by the get_save_data() method of the subclass,
+        such as camera acquisition settings."""
         if hasattr(self, 'get_save_data'):
             tab_save_data = self.get_save_data()
             if isinstance(tab_save_data, dict):
-                save_data.update(tab_save_data)
-            else:
-                self.logger.warning('Incorrect format for tab save data from the get_save_data() method. Data should be a dict. Data was: %s'%tab_save_data)
+                return tab_save_data
+            self.logger.warning('Incorrect format for tab save data from the get_save_data() method. Data should be a dict. Data was: %s', tab_save_data)
+        return {}
+
+    def get_all_save_data(self):
+        save_data = self.get_builtin_save_data()
+        save_data.update(self.get_device_save_data())
         return save_data
 
     def restore_builtin_save_data(self, data):
-        """Restore the settings from ``get_builtin_save_data``. Not to be
-        overridden."""
-        self.set_terminal_visible(data.get('_terminal_visible', False))
+        """Restore the settings from ``get_builtin_save_data``. Settings missing from
+        data are not changed. Not to be overridden."""
+        if '_terminal_visible' in data:
+            self.set_terminal_visible(data['_terminal_visible'])
         if '_splitter_sizes' in data:
             self._ui.splitter.setSizes(data['_splitter_sizes'])
 
@@ -953,12 +959,13 @@ class PluginTab:
         ``restore_save_data`` when the tab is initialised."""
         return {}
         
+    def get_device_save_data(self):
+        tab_save_data = self.get_save_data()
+        return tab_save_data if isinstance(tab_save_data, dict) else {}
+
     def get_all_save_data(self):
         save_data = self.get_builtin_save_data()
-        if hasattr(self, 'get_save_data'):
-            tab_save_data = self.get_save_data()
-            if isinstance(tab_save_data, dict):
-                save_data.update(tab_save_data)
+        save_data.update(self.get_device_save_data())
         return save_data
 
 

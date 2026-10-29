@@ -225,17 +225,16 @@ and save it under:
 
 #### `store_front_panel_in_h5(...)`
 
-Parameter changed:
-
-- `save_queue_data` -> `shot_file`, inverted: `shot_file=True`, from the shot
-  loop, writes no `shot_execution_data`
 - `window_geometry` is written only into BLACS's own settings file, decided by
-  the file's name: upstream wrote `window_*` attributes into every file, shot
-  files included
+  the file's name, as a repr of the shared geometry: upstream writes it into
+  every settings file it saves
+- `dataset.attrs['shot_execution_data']` in place of upstream's
+  `analysis_data` and `queue_data`
 
-Attribute written changed:
+#### `store_shot_front_panel_in_h5(...)`
 
-- `dataset.attrs['shot_execution_data']`
+- runs in the main thread, as `store_front_panel_in_h5()` does: the shot loop
+  calls it, and the front panel values it reads are the tabs' live dicts
 
 If upstream adds saved-state fields here, merge them into the shot-execution
 path, but keep the legacy read fallback only in `BLACS._restore_shot_execution_data()`.

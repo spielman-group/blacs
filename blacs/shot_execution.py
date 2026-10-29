@@ -762,7 +762,7 @@ class ShotExecutor:
                         continue
 
                     # Front panel data is read now but saved to the h5 file after the run.
-                    states,tab_positions,window_data,plugin_data = self.BLACS.front_panel_settings.get_save_data()
+                    front_panel_data = self.BLACS.front_panel_settings.get_shot_data()
                     self.set_status(f"Running (program time: {time.time() - start_time:.3f}s)...", path)
                     
                     experiment_finished_notifications = queue.Queue()
@@ -858,14 +858,8 @@ class ShotExecutor:
                 # Transition to manual.
                 try:
                     with h5py.File(path,'r+') as hdf5_file:
-                        self.BLACS.front_panel_settings.store_front_panel_in_h5(
-                            hdf5_file,
-                            states,
-                            tab_positions,
-                            window_data,
-                            plugin_data,
-                            save_conn_table=False,
-                            shot_file=True,
+                        self.BLACS.front_panel_settings.store_shot_front_panel_in_h5(
+                            hdf5_file, front_panel_data
                         )
 
                         data_group = hdf5_file['/'].require_group('data')

@@ -138,10 +138,10 @@ class FakeTab:
 
 
 class FakeFrontPanelSettings:
-    def get_save_data(self):
-        return {}, {}, {}, {}
+    def get_shot_data(self):
+        return {}
 
-    def store_front_panel_in_h5(self, hdf5_file, *args, **kwargs):
+    def store_shot_front_panel_in_h5(self, hdf5_file, shot_data):
         pass
 
 
