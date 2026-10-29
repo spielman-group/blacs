@@ -23,7 +23,6 @@ import h5py
 from qtutils.qt.QtWidgets import QApplication
 
 import fixtures
-import runmanager.__main__
 from runmanager.__main__ import RunManager, RunmanagerServer
 from runmanager.blacs_status import blacs_state
 from runmanager.client import RunmanagerClient
@@ -172,11 +171,8 @@ class IntegrationFixture:
 
         self.runmanager = RunmanagerApp()
         self.addCleanup(self.runmanager.queue_manager.shutdown)
-        self.real_runmanager_app = getattr(runmanager.__main__, 'app', None)
-        runmanager.__main__.app = self.runmanager
-        self.addCleanup(self.restore_runmanager_app)
         self.runmanager_server = RunmanagerServer(
-            port=free_port(), bind_address='tcp://127.0.0.1'
+            self.runmanager, port=free_port(), bind_address='tcp://127.0.0.1'
         )
         self.addCleanup(self.runmanager_server.shutdown)
         port = self.runmanager_server.port
@@ -223,12 +219,6 @@ class IntegrationFixture:
     def tearDown(self):
         shot_execution.process_tree = self.real_process_tree
         shot_execution.time.sleep = self.real_sleep
-
-    def restore_runmanager_app(self):
-        if self.real_runmanager_app is None:
-            del runmanager.__main__.app
-        else:
-            runmanager.__main__.app = self.real_runmanager_app
 
     def make_executor(self):
         executor = make_executor(
