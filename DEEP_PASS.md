@@ -57,10 +57,10 @@ The campaign and the upstream stage keep no alias, old import path, shim,
 legacy keyword or deprecation path. `blacs.plugins` re-exports
 `labscript_utils.plugins`' `callback`, `Callback` and `DEFAULT_PRIORITY`, which
 upstream defines there, and `BasePlugin` beside them. One fallback for an old
-saved file waits for Ian: the connection table plugin takes a `.h5` globals
-file, in its saved list or its file dialog, as the TOML file runmanager made
-from it (`normalize_globals_path`), so a settings file saved before the TOML
-globals keeps its globals list.
+saved file stays (Ian): the connection table plugin takes a `.h5` globals file,
+in its saved list or its file dialog, as the TOML file runmanager made from it
+(`normalize_globals_path`), so a settings file saved before the TOML globals
+keeps its globals list. It is offered upstream with the TOML globals.
 
 ## Left as it is
 
