@@ -36,7 +36,8 @@ labscript-devices `bfd7a65`, spielman-devices `cff9cf1` and zprocess `db42229`.
 - R11. A restart, Stop, a tab's close as BLACS quits, and a fatal error all end workers
   by R8 to R10; a restart or Stop first gives `shutdown()` 2 s as a state.
 - R12. Stop leaves the tab open as "stopped" with a message that cannot be dismissed,
-  so the shot loop refuses it as a tab in error; the button then reads Start.
+  so the shot loop refuses it as a tab in error; the button then reads Start. A tab
+  stopped when BLACS quits starts as usual next time, as upstream's does (Ian).
 - R13. BLACS's quit aborts the shot in hand, waits for the shot loop, gives each tab's
   `shutdown_workers` 2 s, then ends all tabs' workers at once and quits after.
 - R14. The shot loop reports a tab restarted or stopped during a shot as "restarted or
@@ -127,6 +128,7 @@ the quit for 2 s plus `WORKER_QUIT_TIMEOUT`, all tabs at once.
   (process_tree.py:506-507, 1501). Uncaught, it ends a restart before the rebuild.
 - F3. The worker runs `shutdown()` on quit (R10), for NI-DAQmx. Upstream ends workers
   after a fatal error without it, and its quit runs no device code before `os._exit`.
+- F2 and F3 are offered upstream as a pull request (Ian).
 - F4. The fork's workerarg rule stays (fork 843), now refusing `shutdown` too.
 - F5. The Qt lock comment (fork 61-63) goes with the blocking `get` it explains;
   `_initialise_worker` runs first as it is queued at priority -1 (502).
@@ -195,8 +197,3 @@ stay. New tests drive `Tab` and real workers, in about 45 lines:
    the parent only. R9.
 4. A stopped tab runs none of the states it is given, and Start brings up a worker
    that runs jobs. R12.
-
-## Open questions for Ian
-
-1. F3 with F2: offer them upstream as a pull request, or keep them in the fork?
-2. A tab stopped at quit: start it as usual next time (upstream), or start it stopped?
