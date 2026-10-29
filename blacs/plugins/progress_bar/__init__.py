@@ -146,10 +146,10 @@ class Plugin(BasePlugin):
         marker = marker and self.markers is not None and len(self.markers) > 0
         wait = wait and self.waits is not None and len(self.waits) > 0
         if marker:
-            marker_index = self.next_marker_index
-            if previous:
-                marker_index -= 1
-                assert marker_index >= 0
+            marker_index = self.next_marker_index - 1 if previous else self.next_marker_index
+            # A wait before the first marker leaves no current marker.
+            marker = marker_index >= 0
+        if marker:
             label, _, color = self.markers[marker_index]
             self.bar_text_prefix = f'[{ensure_str(label)}] '
             r, g, b = color[0]
