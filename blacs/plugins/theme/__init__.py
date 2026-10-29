@@ -14,6 +14,7 @@ import logging
 import os
 
 from qtutils import UiLoader
+from qtutils.qt import QtCore, QtGui, QtWidgets
 
 from blacs.plugins import PLUGINS_DIR, BasePlugin
 
@@ -22,84 +23,136 @@ module = "theme" # should be folder name
 logger = logging.getLogger(f'BLACS.plugin.{module}')
 
 
-DEFAULT_STYLESHEET = """DigitalOutput {
+# The colours the theme's button colour is mixed with for outputs and inverted
+# outputs that are off, with and without the mouse over them, and that are on:
+OFF_COLOR = '#053605'
+OFF_HOVER_COLOR = '#0b570b'
+INVERTED_OFF_COLOR = '#0e2665'
+INVERTED_OFF_HOVER_COLOR = '#163a92'
+ON_COLOR = '#20e020'
+INVERTED_ON_COLOR = '#20a0ff'
+OFF_TEXT_COLOR = '#ffffff'
+# How far the button colour is mixed towards the off and on colours:
+OFF_FRACTION = 0.85
+ON_FRACTION = 0.9
+# The HSV value of the top of an on output's gradient, as a fraction of its
+# colour's; the bottom has value 1.
+ON_TOP_VALUE_FACTOR = 0.85
+# How far the bottom of the gradient is mixed towards white under the mouse:
+ON_HOVER_FRACTION = 0.35
+# How far each fill is mixed towards the shadow colour for its border:
+BORDER_FRACTION = 0.3
+# How far a disabled output's text is mixed towards its fill:
+DISABLED_TEXT_FRACTION = 0.5
+
+STYLESHEET_TEMPLATE = """{name} {{
     font-size: 12px;
-    background-color: rgb(50,100,50);
-    border: 1px solid rgb(50,100,50);
+    background-color: {off};
+    border: 1px solid {off_border};
     border-radius: 3px;
     padding: 2px;
-    color: #202020;
-}
+    color: {off_text};
+}}
 
-DigitalOutput:hover {
-    background-color: rgb(50,130,50);
-    border: None;
-}
+{name}:hover {{
+    background-color: {off_hover};
+    border: 1px solid {off_hover_border};
+}}
 
-DigitalOutput:disabled{
-   background-color: rgb(50,100,50);
-   color: #505050;
-}
+{name}:disabled {{
+    background-color: {off};
+    border: 1px solid {off_border};
+    color: {off_disabled_text};
+}}
 
-DigitalOutput:checked {
+{name}:checked {{
     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgb(32,200,32), stop: 1 rgb(32,255,32));
-    border: 1px solid #8f8f91;
-    color: #000000;
-}
+                                      stop: 0 {on_top}, stop: 1 {on_bottom});
+    border: 1px solid {on_border};
+    color: {on_text};
+}}
 
-DigitalOutput:hover:checked {
+{name}:hover:checked {{
     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgb(32,200,32), stop: 1 rgb(120,255,120));
-    border: 1px solid #8f8f91;
-}
+                                      stop: 0 {on_top}, stop: 1 {on_hover_bottom});
+    border: 1px solid {on_border};
+}}
 
-DigitalOutput:checked:disabled{
-   background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgb(32,200,32), stop: 1 rgb(32,255,32));
-   border: 1px solid #8f8f91;
-   color: #606060;
-}
+{name}:checked:disabled {{
+    background-color: {on};
+    border: 1px solid {on_border};
+    color: {on_disabled_text};
+}}
+"""
 
-InvertedDigitalOutput {
-    font-size: 12px;
-    background-color: rgb(70,100,170);
-    border: 1px solid rgb(70,100,170);
-    border-radius: 3px;
-    padding: 2px;
-    color: #202020;
-}
 
-InvertedDigitalOutput:hover {
-    background-color: rgb(70, 130, 220);
-    border: None;
-}
+def mix_colors(color0, color1, fraction):
+    """The colour a fraction of the way from color0 to color1."""
+    color0 = QtGui.QColor(color0)
+    color1 = QtGui.QColor(color1)
+    return QtGui.QColor.fromRgbF(
+        *((1 - fraction) * a + fraction * b
+          for a, b in zip(color0.getRgbF()[:3], color1.getRgbF()[:3]))
+    )
 
-InvertedDigitalOutput:disabled{
-   background-color: rgb(70,100,170);
-   color: #505050;
-}
 
-InvertedDigitalOutput:checked {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgb(50,150,221), stop: 1 rgb(32,192,255));
-    border: 1px solid #8f8f91;
-    color: #000000;
-}
+def _with_value(color, value):
+    hue, saturation, _, _ = color.getHsvF()
+    return QtGui.QColor.fromHsvF(max(hue, 0), saturation, value)
 
-InvertedDigitalOutput:hover:checked {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgb(50,150,221), stop: 1 rgb(120,192,255));
-    border: 1px solid #8f8f91;
-}
 
-InvertedDigitalOutput:checked:disabled{
-   background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 rgb(50,150,221), stop: 1 rgb(32,192,255));
-   border: 1px solid #8f8f91;
-   color: #606060;
-}
- """
+def _output_stylesheet(name, palette, off_color, off_hover_color, on_color):
+    button = palette.color(QtGui.QPalette.ColorRole.Button)
+    shadow = palette.color(QtGui.QPalette.ColorRole.Shadow)
+    off = mix_colors(button, off_color, OFF_FRACTION)
+    off_hover = mix_colors(button, off_hover_color, OFF_FRACTION)
+    off_text = QtGui.QColor(OFF_TEXT_COLOR)
+    on_text = QtGui.QColor('black')
+    on = mix_colors(button, on_color, ON_FRACTION)
+    on_top = _with_value(on, ON_TOP_VALUE_FACTOR * on.valueF())
+    on_bottom = _with_value(on, 1)
+    colors = {
+        'off': off,
+        'off_border': mix_colors(off, shadow, BORDER_FRACTION),
+        'off_text': off_text,
+        'off_hover': off_hover,
+        'off_hover_border': mix_colors(off_hover, shadow, BORDER_FRACTION),
+        'off_disabled_text': mix_colors(off_text, off, DISABLED_TEXT_FRACTION),
+        'on': on,
+        'on_top': on_top,
+        'on_bottom': on_bottom,
+        'on_hover_bottom': mix_colors(on_bottom, 'white', ON_HOVER_FRACTION),
+        'on_border': mix_colors(on_top, shadow, BORDER_FRACTION),
+        'on_text': on_text,
+        'on_disabled_text': mix_colors(on_text, on, DISABLED_TEXT_FRACTION),
+    }
+    return STYLESHEET_TEMPLATE.format(
+        name=name,
+        **{
+            key: f'rgb({color.red()}, {color.green()}, {color.blue()})'
+            for key, color in colors.items()
+        },
+    )
+
+
+def default_stylesheet():
+    """The digital outputs' style sheet, coloured from QPushButton's palette, so
+    that it differs between light and dark themes."""
+    palette = QtWidgets.QApplication.palette('QPushButton')
+    return '\n'.join(
+        [
+            _output_stylesheet(
+                'DigitalOutput', palette, OFF_COLOR, OFF_HOVER_COLOR, ON_COLOR
+            ),
+            _output_stylesheet(
+                'InvertedDigitalOutput',
+                palette,
+                INVERTED_OFF_COLOR,
+                INVERTED_OFF_HOVER_COLOR,
+                INVERTED_ON_COLOR,
+            ),
+        ]
+    )
 
 
 def is_default_stylesheet(stylesheet):
@@ -108,7 +161,7 @@ def is_default_stylesheet(stylesheet):
     def no_whitespace(s):
         return "".join(s.split())
 
-    return no_whitespace(str(stylesheet)) == no_whitespace(DEFAULT_STYLESHEET) 
+    return no_whitespace(str(stylesheet)) == no_whitespace(default_stylesheet())
 
 
 class Plugin(BasePlugin):
@@ -127,12 +180,19 @@ class Plugin(BasePlugin):
             # under PyQt5 on first draw.
             self.BLACS['ui'].centralwidget.show()
             stylesheet_settings = self.BLACS['settings'].get_value(Setting,"stylesheet")
+            if stylesheet_settings is None:
+                stylesheet_settings = default_stylesheet()
             self.BLACS['ui'].centralwidget.setStyleSheet(self.unmodified_stylesheet + stylesheet_settings)
         
     def plugin_setup_complete(self, BLACS):
         self.BLACS = BLACS
         self.unmodified_stylesheet = self.BLACS['ui'].centralwidget.styleSheet()
         self.update_stylesheet()
+        # Deferred: Qt gives each widget class its theme palette only after the
+        # application's palette changes.
+        self.BLACS['ui'].themeChanged.connect(
+            lambda: QtCore.QTimer.singleShot(0, self.update_stylesheet)
+        )
 
 
 class Setting:
@@ -141,18 +201,26 @@ class Setting:
     def __init__(self,data):
         self.data = data
         
-        if 'stylesheet' not in self.data or not self.data['stylesheet']:
-            self.data['stylesheet'] = DEFAULT_STYLESHEET
+        if not self.data.get('stylesheet'):
+            # Absent or empty means the default, made from the palette when used.
+            self.data.pop('stylesheet', None)
+        # The default the dialog shows when there is no custom stylesheet:
+        self.shown_default = None
     
     def on_set_green_button_theme(self):
-        self.widgets['stylesheet'].appendPlainText(DEFAULT_STYLESHEET)
+        self.widgets['stylesheet'].appendPlainText(default_stylesheet())
         
     # Return the settings page and an icon for its label; the label text is the
     # class's name attribute.
     def create_dialog(self,notebook):
         ui = UiLoader().load(os.path.join(PLUGINS_DIR, module, 'theme.ui'))
         
-        ui.stylesheet_text.setPlainText(self.data['stylesheet'])
+        if 'stylesheet' in self.data:
+            ui.stylesheet_text.setPlainText(self.data['stylesheet'])
+            self.shown_default = None
+        else:
+            self.shown_default = default_stylesheet()
+            ui.stylesheet_text.setPlainText(self.shown_default)
         ui.example_button.clicked.connect(self.on_set_green_button_theme)
         
         self.widgets = {}
@@ -173,14 +241,16 @@ class Setting:
             # The newline distinguishes an intentionally blank stylesheet from an
             # empty string, which __init__ takes to mean the default stylesheet.
             stylesheet += '\n'
-        self.data['stylesheet'] = stylesheet
-        data = self.data.copy()
-        if is_default_stylesheet(stylesheet):
-            # Only save if it is not the default stylesheet:
-            del data['stylesheet']
-        return data
+        if is_default_stylesheet(stylesheet) or (
+            self.shown_default is not None
+            and stylesheet.strip() == self.shown_default.strip()
+        ):
+            # Only a stylesheet other than the default is saved; the default shown
+            # may come from another theme than the one now in use.
+            self.data.pop('stylesheet', None)
+        else:
+            self.data['stylesheet'] = stylesheet
+        return self.data.copy()
         
     def close(self):
         self.widgets['example_button'].clicked.disconnect(self.on_set_green_button_theme)
-        
-    
