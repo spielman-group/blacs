@@ -128,7 +128,7 @@ the quit for 2 s plus `WORKER_QUIT_TIMEOUT`, all tabs at once.
   (process_tree.py:506-507, 1501). Uncaught, it ends a restart before the rebuild.
 - F3. The worker runs `shutdown()` on quit (R10), for NI-DAQmx. Upstream ends workers
   after a fatal error without it, and its quit runs no device code before `os._exit`.
-- F2 and F3 are offered upstream as a pull request (Ian).
+- F2, F3 and F7 are offered upstream as one pull request (Ian).
 - F4. The fork's workerarg rule stays (fork 843), now refusing `shutdown` too.
 - F5. The Qt lock comment (fork 61-63) goes with the blocking `get` it explains;
   `_initialise_worker` runs first as it is queued at priority -1 (502).
@@ -138,9 +138,10 @@ the quit for 2 s plus `WORKER_QUIT_TIMEOUT`, all tabs at once.
 - F7. Stop calls a private `Tab._stop_workers`, not upstream's `Tab.stop` (upstream
   927): PulseBlaster/blacs_tabs.py:156 and NarwhalPulseGenerator/blacs_tabs.py:384
   define a `stop` state that stops the board, so Stop would queue that instead.
-- F8. The worker's receiver thread is `Worker._receive_commands`, not upstream's
-  `_receive` (upstream 1155), which LightCrafterDMD/blacs_workers.py:106 overrides with
-  a `_receive(deadline)` of its own. Upstream has both clashes.
+  Upstream labscript-devices has both (PulseBlaster:183, NarwhalPulseGenerator:384).
+- F8. The worker's receiver thread keeps upstream's name, `Worker._receive` (upstream
+  1155). LightCrafterDMDWorker overrides it with a reply reader of its own, so
+  labscript-devices renames that (see Compatibility).
 - F9. One method shuts a tab's workers down: upstream's `_shut_down_workers(callback)`
   (upstream 916) replaces `shutdown_workers` (fork 552), and its callback sets
   `shutdown_workers_complete`. `_end_workers`'s timeout replaces the deadline that
@@ -186,6 +187,10 @@ SIGINT handler.
   not on Stop. Meanwhile the Arduino loop (arduino_tabs.py:57-63, started at
   Arduino_Device/blacs_tabs.py:495) queues a state every 2 s and EnviroMUX's timeout
   (blacs_tabs.py:92) one more; none runs, and Start discards them. No change.
+- LightCrafterDMD/blacs_workers.py:106 defines `_receive(self, deadline)`, which would
+  replace the worker's receiver thread (F8). labscript-devices renames it, for example
+  `_receive_reply`, before this change lands. Upstream labscript-devices has the same
+  override (LightCrafterDMD/blacs_workers.py:86), so the rename is offered upstream.
 - pseudoclock.py:90-96 calls `self._restart_receiver` itself, and RFBlaster/
   blacs_tabs.py:107, 127 set `self.mode` in a state; both work as now.
 - Worker threads (NI_DAQmx/blacs_workers.py:960, AlazarTechBoard/blacs_workers.py:139,
