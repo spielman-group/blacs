@@ -244,12 +244,13 @@ labscript-devices has 35 `@define_state` and 35 `queue_work(` uses, spielman-dev
 - `TriggerableCameraWorker.shutdown()` aborts and joins a shot still acquiring before
   it closes the camera, and does not resume continuous acquisition paused for the shot
   (common/triggerable_camera/blacs_workers.py:554-563). `abort()` disarms a camera
-  armed for a shot whether or not its acquisition thread exists or has started (419,
-  432, 533-538), and a worker whose `init` failed part way still closes its camera
-  (244-249, 555-556). These are labscript-devices 8fdcc7b, c2496ce and 9009e07, with
-  tests; upstream forms UpstreamBugFixes b71e7d9, 1fed408 and 36ac52a. The abort
-  leaves an Andor unarmed (AndorSolis/blacs_workers.py:75-78), so its `shutdown`,
-  which refuses an armed camera (andor_utils.py:647-651), needs no change.
+  armed for a shot whether or not its acquisition thread exists or has started, and
+  cleanup joins the thread, kept before it starts, after any interruption; a worker
+  whose `init` failed part way still closes its camera. An AndorSolis abort leaves the
+  camera disarmed though no acquisition started, so its `shutdown`, which refuses an
+  armed camera (andor_utils.py:647-651), goes through. These are labscript-devices
+  8fdcc7b, c2496ce, 9009e07, 260e8a3 and f88b9cc, with tests; upstream forms
+  UpstreamBugFixes b71e7d9, 1fed408, 36ac52a, b9d34b4 and 7fb8550.
 - The continuous thread polls for the tab's reply to each frame every 100 ms and gives
   up once continuous acquisition is stopped, its REQ socket relaxed and correlated
   (blacs_workers.py:272-276, 338-340; 9009e07, upstream form fe3768b). So
