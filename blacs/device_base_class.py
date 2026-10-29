@@ -28,7 +28,6 @@ from qtutils.qt.QtWidgets import (
     QVBoxLayout,
 )
 
-# Imported for its side effect: it installs the suite's exception hook.
 from qtutils import UiLoader
 
 from blacs import BLACS_DIR
