@@ -46,7 +46,8 @@ from qtutils.qt.QtGui import QColor, QPalette
 from qtutils.icons import Icon
 from qtutils.qt.QtWidgets import (
     QMainWindow,
-    QApplication
+    QApplication,
+    QMessageBox,
 )
 from qtutils.qt import QT_ENV
 PYQT_VERSION_STR = importlib.metadata.version(QT_ENV)
@@ -55,7 +56,7 @@ PYQT_VERSION_STR = importlib.metadata.version(QT_ENV)
 splash.update_text("importing zmq and zprocess")
 import zmq
 import zprocess
-from zprocess import raise_exception_in_thread
+from zprocess import raise_exception_in_thread, port_in_use
 
 
 splash.update_text('importing h5_lock and h5py')
@@ -535,6 +536,24 @@ class BlacsServer(ZMQServer):
         return self.blacs.shot_executor.get_status_snapshot()
 
 
+def exit_if_port_in_use(exp_config):
+    """Exit, saying why, if another BLACS holds this one's port.
+
+    Called before any tab is built: a second BLACS would otherwise start workers
+    on the hardware the first one holds. The server's own OSError on binding is
+    the backstop."""
+    port = exp_config.getint('ports', BlacsServer.server, fallback=BlacsServer.default_port)
+    if port_in_use(port):
+        message = (
+            f"BLACS cannot start because port {port}, its port in the labconfig, is "
+            "in use. Another copy of BLACS is probably running."
+        )
+        logger.error(message)
+        splash.hide()
+        QMessageBox.critical(None, 'BLACS', message)
+        sys.exit(1)
+
+
 if __name__ == '__main__':
     if 'tracelog' in sys.argv:
         import labscript_utils.tracelog
@@ -571,6 +590,7 @@ if __name__ == '__main__':
     settings_path = get_default_appconfig_file(
         exp_config, 'blacs', f'{hostname()}_BLACS.h5', ensure_directory=True
     )
+    exit_if_port_in_use(exp_config)
 
     splash.update_text('loading connection table')
     logger.info('About to load connection table: %s'%exp_config.get('paths','connection_table_h5'))
