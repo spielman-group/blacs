@@ -109,8 +109,9 @@ labscript-devices `9009e07`, spielman-devices `874e25e` and zprocess `1b9de75`.
 - **Stop.** As a restart up to `shutdown()`; then close the state machine, show the
   message, set `'stopping'`, `_end_workers` in a thread, `'stopped'`; Start restarts.
 - **BLACS quit.** `closeEvent` stops the shot loop and waits (fork __main__.py:131-149).
-  `on_save_exit` calls each tab's `_shut_down_workers_then` (upstream 893-914) with a
-  callback setting `tab.shutdown_workers_complete`, called at once for a closed or
+  `on_save_exit` calls each device tab's `_shut_down_workers_then` (upstream 893-914),
+  passing over plugin tabs, which share `tablist` (__main__.py:271), as upstream does
+  (F9), with a callback setting `tab.shutdown_workers_complete`, called at once for a closed or
   failed state machine (898-900). `finalise_quit` closes a tab once that is set, after
   2 s, or in `'fatal error'`, `'stopping'` or `'stopped'`, in a thread (474-490), and
   quits after (508). A tab whose worker will not exit delays the quit by at most 2 s
@@ -156,7 +157,7 @@ a commit of its own, and nothing else. Once built,
 | Upstream | Taken | Except |
 | --- | --- | --- |
 | bfaaf25, f89cc2b | as is | |
-| 4c0f058 | as is | `close()` leaves `interrupt_startup()` to `finalise_close_tab` (F10) |
+| 4c0f058 | as is | `close()` leaves `interrupt_startup()` to `finalise_close_tab` (F10) and iterates a copy of the workers (F12) |
 | 69a2dd3 | as is | `_end_workers` catches `ProcessExited` (F2); the worker runs `shutdown()` on quit and on a lost parent, dropping its sends to a lost parent (F3) |
 | d00b690 | as is | Stop calls `_stop_workers` (F7); `shutdown_workers` goes, with `on_save_exit`'s call (F9); the status texts are in `shot_execution.py` (F1) |
 
@@ -182,8 +183,12 @@ import and an attribute nothing reads, in 111 places: 121 of the fork's lines ag
   remote worker's name lookups (1496, 1475). The call moves to the start of
   `finalise_close_tab`, before the job thread is joined; `_end_workers` makes it for
   Stop and a fatal error (upstream 847). Each close starts that thread at once.
-- F2, F3 with its use of the hook, F7 and F10 are offered upstream as one pull request,
-  and zprocess's `on_parent_death` hook to zprocess's upstream (Ian).
+- F12. `StateMachine.close()` iterates `self.workers.values()` (upstream 324) while
+  `_end_workers_locked()` pops from that dict under a lock `close()` does not take, so
+  a fatal error racing a restart or quit raises "dictionary changed size during
+  iteration" (reproduced with F10 applied). `close()` iterates `list(...)` of it.
+- F2, F3 with its use of the hook, F4, F7, F9, F10, F11 and F12 are offered upstream as
+  one pull request, and zprocess's `on_parent_death` hook to zprocess's upstream (Ian).
 - F4. The fork's workerarg rule stays (fork 843): a workerarg overrides a device
   worker's class attribute, its default, and only the Worker base class's names are
   refused, now `shutdown` too. Upstream refuses any name the worker has.
@@ -200,8 +205,9 @@ import and an attribute nothing reads, in 111 places: 121 of the fork's lines ag
   `_receive_reply` (labscript-devices c3865f0; upstream form UpstreamBugFixes c1bd755).
 - F9. One mechanism shuts a tab's workers down: `_shut_down_workers_then` and its
   `_shut_down_workers(callback)` state (upstream 893-919). The `shutdown_workers` state
-  (upstream 784-789, fork 551-556) goes, with `on_save_exit`'s `hasattr` call of it
-  (fork __main__.py:452-453), which would skip it silently; `_end_workers`'s timeout
+  (upstream 784-789, fork 551-556) goes. `on_save_exit` calls `_shut_down_workers_then`
+  in its place (fork __main__.py:452-453), behind upstream's `hasattr` test, which
+  passes over plugin tabs, as `finalise_quit`'s test of `finalise_close_tab` does; `_end_workers`'s timeout
   replaces `finalise_close_tab`'s own (fork 596-601). `Worker.shutdown()` takes no
   arguments: of 25 overrides one calls `super()`'s, and PineBlaster's `abort` calls it.
 - F11. `PluginTab` has `get_device_save_data()` (fork 963-965): a shot file's tab data
@@ -278,6 +284,6 @@ tests/test_state_machine.py:63-64 changes, to `close_tab()`.
 | Lost parent | R10 | A helper process starts the worker, idle and in a sleeping job, and is killed; the release file appears. |
 | Bounded | R10 | A `shutdown()` waiting on an event never set: the worker exits after its 5 s, with no release file. |
 | Camera mid-shot | R11 | labscript-devices `ShutdownTests` (8fdcc7b), changed so its fake camera's `grab` sets an `Event` on entry: the test waits for it, calls `shutdown()`, and finds the acquisition thread ended before the camera closed. |
-| Untested by choice (Ian) | R1-R7, R9, R12-R14; R8's wait for an HDF5 file; R10's 5 s for a job; R11's 2 s for `shutdown()` as a state; F2, F4, F7, F9, F10, F11 | |
+| Untested by choice (Ian) | R1-R7, R9, R12-R14; R8's wait for an HDF5 file; R10's 5 s for a job; R11's 2 s for `shutdown()` as a state; F2, F4, F7, F9, F10, F11, F12 | |
 
 The blacs tests come to about 80 lines beside about 490 of code.
