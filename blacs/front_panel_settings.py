@@ -257,7 +257,7 @@ class FrontPanelSettings:
         data_group = hdf5_file['/'].create_group('front_panel')
 
         front_panel_list = []
-        other_data_list = []
+        other_data = {}
         # 'S', not the 'a' alias numpy 2 removed. The bytes on disk are the same, so
         # older settings files still read back.
         front_panel_dtype = [('name','S256'),('device_name','S256'),('channel','S256'),('base_value',float),('locked',bool),('base_step_size',float),('current_units','S256')]
@@ -283,7 +283,7 @@ class FrontPanelSettings:
                         logger.warning('Could not save data for channel %s on device %s because the output value (in base units) was not a string or could not be coerced to a float without loss of precision'%(hardware_name, device_name))
 
             od = repr(device_state["saved_data"])
-            other_data_list.append(od)
+            other_data[device_name] = od
             max_od_length = len(od) if len(od) > max_od_length else max_od_length
 
         if front_panel_list:
@@ -292,11 +292,12 @@ class FrontPanelSettings:
                 front_panel_array[i] = row
             data_group.create_dataset('front_panel',data=front_panel_array)
 
-        i = 0
-        tab_data = numpy.empty(len(notebook_data),dtype=[('tab_name','S256'),('notebook','S2'),('page',int),('visible',bool),('data','S'+str(max_od_length))])
-        for device_name,data in notebook_data.items():
-            tab_data[i] = (device_name,data["notebook"],data["page"],data["visible"],other_data_list[i])
-            i += 1
+        # A device whose tab failed to load has no place, and is saved at notebook 0,
+        # page 0.
+        tab_data = numpy.empty(len(other_data),dtype=[('tab_name','S256'),('notebook','S2'),('page',int),('visible',bool),('data','S'+str(max_od_length))])
+        for i, (device_name, od) in enumerate(other_data.items()):
+            place = notebook_data.get(device_name, {"notebook": 0, "page": 0, "visible": False})
+            tab_data[i] = (device_name,place["notebook"],place["page"],place["visible"],od)
 
         dataset = data_group.create_dataset("_notebook_data",data=tab_data)
         dataset.attrs['plugin_data'] = repr(plugin_data)
