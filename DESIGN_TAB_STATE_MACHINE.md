@@ -187,10 +187,9 @@ SIGINT handler.
   not on Stop. Meanwhile the Arduino loop (arduino_tabs.py:57-63, started at
   Arduino_Device/blacs_tabs.py:495) queues a state every 2 s and EnviroMUX's timeout
   (blacs_tabs.py:92) one more; none runs, and Start discards them. No change.
-- LightCrafterDMD/blacs_workers.py:106 defines `_receive(self, deadline)`, which would
-  replace the worker's receiver thread (F8). labscript-devices renames it, for example
-  `_receive_reply`, before this change lands. Upstream labscript-devices has the same
-  override (LightCrafterDMD/blacs_workers.py:86), so the rename is offered upstream.
+- LightCrafterDMDWorker's own reply reader, which as `_receive` would have replaced
+  the worker's receiver thread (F8), is `_receive_reply` (labscript-devices c3865f0),
+  and the rename is offered upstream (its UpstreamBugFixes c1bd755).
 - pseudoclock.py:90-96 calls `self._restart_receiver` itself, and RFBlaster/
   blacs_tabs.py:107, 127 set `self.mode` in a state; both work as now.
 - Worker threads (NI_DAQmx/blacs_workers.py:960, AlazarTechBoard/blacs_workers.py:139,
