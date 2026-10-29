@@ -13,7 +13,6 @@
 import os
 import logging
 
-import labscript_utils.excepthook
 import numpy
 import labscript_utils.h5_lock, h5py
 from qtutils import inmain_decorator

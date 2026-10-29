@@ -29,7 +29,6 @@ from qtutils.qt.QtWidgets import (
 )
 
 # Imported for its side effect: it installs the suite's exception hook.
-import labscript_utils.excepthook
 from qtutils import UiLoader
 
 from blacs import BLACS_DIR

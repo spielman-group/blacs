@@ -831,6 +831,7 @@ class Worker(Process):
         self.logger = logging.getLogger(log_name)
         self.logger.debug('Starting')
         import labscript_utils.excepthook
+        labscript_utils.excepthook.install()
         labscript_utils.excepthook.set_logger(self.logger)
         from labscript_utils.ls_zprocess import ProcessTree
         process_tree = ProcessTree.instance()

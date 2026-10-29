@@ -12,6 +12,7 @@
 #####################################################################
 """BLACS GUI and supporting code."""
 import labscript_utils.excepthook
+labscript_utils.excepthook.install()
 
 import ast
 import os
