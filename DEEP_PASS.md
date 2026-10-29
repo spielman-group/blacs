@@ -24,14 +24,36 @@ purpose. It is deleted when the pass is done.
   TODOs. `docs/SPIELMAN_FORK_CHANGES.md` is the guide to merging upstream into
   the fork.
 
+## Upstream
+
+CodeHealth carries, ported by hand and credited in each commit, upstream's
+fixes for bugs it shared: 9ea53bf, e35dfff, 8bfadff with 0c1bb86, 4a6562a,
+9df6180, 1126665, the open parts of 634f0cc with 9fa23e7, 803cf93, ecb3bef,
+609a930 and 4692a8b; closing BLACS aborting the shot in hand (d67dbe4, adapted:
+the shot is reported `aborted`, which runmanager handles as any abort); and
+the 2x icons (7a8f018). The floors are Python 3.13 and qtutils 4.4.1.
+
+Not taken:
+
+- `setup_application()` (0636b34) waits until labscript-utils provides it.
+- The palette-derived digital output colours (e8d59dc) wait for a decision.
+- The tab state machine on the main thread (4c0f058, bfaaf25, f89cc2b), ending
+  workers with a quit message and the Stop button (69a2dd3, d00b690), the
+  progress bar on a main-thread timer (5a226bb, 763bff2), the exit teardown
+  (c3e319e), the port-in-use exit (074dcda), the run time's UTC offset
+  (7918c4d, with lyse and runmanager) and `excepthook.install()` (d2e7675,
+  7719dee) are design or dependency work for Ian.
+- Upstream's queue, analysis submission and pushed-shot changes, which
+  runmanager owns here, and 177f213 and 8ff163e, which contradict
+  `shot-management.rst` and the shot file's `/front_panel` format.
+
 ## Left as it is
 
 - Guards at a real boundary: `runmanager_rpc`'s catch and log-once,
   `manage()`'s catch, and the held outcome's delivery on the way out, all stated
   in `shot-management.rst`. `reset_failed_shot_file`'s swallowed errors are
   upstream's.
-- Style: `os.path`, Qt enum spelling (with the redundant PySide branches in the
-  connection table's sort-order helpers), and two `%` halves in
-  `Tab.mainloop`, whose escaped HTML cannot go in an f-string under Python 3.11.
+- Style: `os.path`, and Qt enum spelling (with the redundant PySide branches in
+  the connection table's sort-order helpers).
 - Tests are more than rule 13's tenth of the code. The tenth is not reached
   without cutting the integration fixture, which is what makes the rest real.
