@@ -97,7 +97,11 @@ from labscript_utils.connections import ConnectionTable
 from labscript_utils.qtwidgets.dragdroptab import DragDropTabWidget
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 from labscript_utils.qtwidgets.themed_window import ThemedWindow
-from labscript_utils.qtwidgets.application import LabscriptGuiApplication, exec_qapplication
+from labscript_utils.qtwidgets.application import (
+    LabscriptGuiApplication,
+    exec_qapplication,
+    setup_application,
+)
 from labscript_utils.labconfig import LabConfig, get_default_appconfig_file
 from labscript_utils.plugins import MenuContext
 from labscript_profile import hostname
@@ -608,6 +612,7 @@ if __name__ == '__main__':
 
     splash.update_text('initialising Qt application')
     qapplication = get_qapplication()
+    setup_application(qapplication)
     logger.info('QApplication instantiated')
     app = BLACS(qapplication)
 
