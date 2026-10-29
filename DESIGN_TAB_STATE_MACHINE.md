@@ -38,7 +38,7 @@ labscript-devices `9009e07`, spielman-devices `874e25e` and zprocess `1b9de75`.
 - R11. A restart, Stop, a tab's close as BLACS quits, a fatal error and a lost parent
   end workers by R8 to R10; a restart or Stop first gives `shutdown()` 2 s as a state.
   As `shutdown()` may come mid-shot, it joins the worker's own threads before it closes
-  their hardware, and the tab keeps what they talk to until the worker has ended.
+  their hardware.
 - R12. Stop leaves the tab open as "stopped" with a message that cannot be dismissed,
   so the shot loop refuses it as a tab in error; the button then reads Start. A tab
   stopped when BLACS quits starts as usual next time, as upstream's does (Ian).
@@ -247,11 +247,9 @@ labscript-devices has 35 `@define_state` and 35 `queue_work(` uses, spielman-dev
 - The continuous thread polls for the tab's reply to each frame every 100 ms and gives
   up once continuous acquisition is stopped, its REQ socket relaxed and correlated
   (blacs_workers.py:272-276, 338-340; 9009e07, upstream form fe3768b). So
-  `stop_continuous` (369-375) returns once BLACS has died. `TriggerableCameraTab` shuts
-  its image receiver in a `restart` override (blacs_tabs.py:375-378), before
-  `shutdown()`, as would a `close_tab` override when a restart reaches its 2 s timeout.
-  Change, in labscript-devices, for R11: override `finalise_close_tab`, shutting the
-  receiver after the base has ended the workers. Stop keeps it until Start.
+  `stop_continuous` (369-375) returns once BLACS has died, or once the tab's image
+  receiver, which `TriggerableCameraTab`'s `restart` override shuts
+  (blacs_tabs.py:375-378), is gone. The tab needs no change.
 - `close_tab` overrides (CiceroOpalKellyXEM3001/blacs_tabs.py:73, EnviroMUX/
   blacs_tabs.py:157, arduino_tabs.py:43) run when a stopped tab is started, not on Stop.
   Meanwhile the Arduino loop (arduino_tabs.py:55-62, started at Arduino_Device/
@@ -280,6 +278,6 @@ tests/test_state_machine.py:63-64 changes, to `close_tab()`.
 | Lost parent | R10 | A helper process starts the worker, idle and in a sleeping job, and is killed; the release file appears. |
 | Bounded | R10 | A `shutdown()` waiting on an event never set: the worker exits after its 5 s, with no release file. |
 | Camera mid-shot | R11 | labscript-devices `ShutdownTests` (8fdcc7b), changed so its fake camera's `grab` sets an `Event` on entry: the test waits for it, calls `shutdown()`, and finds the acquisition thread ended before the camera closed. |
-| Untested by choice (Ian) | R1-R7, R9, R12-R14; R8's wait for an HDF5 file; R10's 5 s for a job; R11's 2 s for `shutdown()` as a state and the receiver kept until the worker ends; F2, F4, F7, F9, F10, F11 | |
+| Untested by choice (Ian) | R1-R7, R9, R12-R14; R8's wait for an HDF5 file; R10's 5 s for a job; R11's 2 s for `shutdown()` as a state; F2, F4, F7, F9, F10, F11 | |
 
 The blacs tests come to about 80 lines beside about 490 of code.
