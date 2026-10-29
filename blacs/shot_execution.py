@@ -493,6 +493,8 @@ class ShotExecutor:
             self.stop_requesting_shots(
                 'Shot execution stopped on an unhandled error; restart BLACS')
             self.set_status("Shot execution stopped\nSee the log; restart BLACS")
+            # No loop is left to read an abort.
+            inmain(self._ui.shot_abort_button.setEnabled, False)
         finally:
             # In a finally so an unhandled error cannot strand a held outcome.
             self._deliver_or_name_held_outcome()
