@@ -287,7 +287,6 @@ class Tab:
         self._mainloop_thread.start()
                 
         self.notebook.addTab(self._ui,self.device_name)
-        self._ui.show()
     
     def _get_remote_configuration(self):
         """Return the zprocess RemoteProcessClient for a remote device, else None."""
@@ -908,8 +907,6 @@ class PluginTab:
         elide_label(self._ui.device_name, self._ui.horizontalLayout, Qt.ElideRight)
 
         self.notebook.addTab(self._ui, self.tab_name)
-
-        self._ui.show()
 
         self.initialise_GUI()
         self.restore_save_data(self.settings['saved_data'] if 'saved_data' in self.settings else {})
