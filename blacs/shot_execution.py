@@ -44,7 +44,10 @@ from blacs.tab_base_classes import MODE_TRANSITION_TO_BUFFERED, MODE_BUFFERED
 import blacs.plugins as plugins
 
 from runmanager.client import (
-    DEFAULT_PORT,
+    BLACS_ABORTED,
+    BLACS_COMPLETED,
+    BLACS_FAILED,
+    BLACS_REJECTED,
     PROVIDER_NONE,
     PROVIDER_PAUSED,
     PROVIDER_PENDING,
@@ -82,7 +85,7 @@ class ShotExecutor:
         # deliberate act at this BLACS, never something a restart resumes.
         self._requesting_shots = False
         self.master_pseudoclock = self.BLACS.connection_table.master_pseudoclock
-        self._runmanager_request_client = None
+        self._runmanager_request_client = RunmanagerClient()
         self._runmanager_request_error_logged = False
         # Why requests were stopped, read from outside this class so a runmanager
         # user who is not at BLACS can be shown it.
@@ -112,8 +115,8 @@ class ShotExecutor:
         # contacts runmanager, so it cannot keep the light current.
         self._runmanager_link = LinkIndicator(
             'runmanager',
-            BLACS.exp_config.get('servers', 'runmanager', fallback='localhost'),
-            BLACS.exp_config.getint('ports', 'runmanager', fallback=DEFAULT_PORT),
+            self._runmanager_request_client.host,
+            self._runmanager_request_client.port,
         )
         self._ui.runmanager_link_layout.addWidget(self._runmanager_link)
         self._runmanager_link.start()
@@ -195,8 +198,6 @@ class ShotExecutor:
     def runmanager_rpc(self, method, unavailable_message, *args, client=None, **kwargs):
         try:
             if client is None:
-                if self._runmanager_request_client is None:
-                    self._runmanager_request_client = RunmanagerClient()
                 client = self._runmanager_request_client
             response = method(client, *args, **kwargs)
             self._runmanager_request_error_logged = False
@@ -576,7 +577,7 @@ class ShotExecutor:
                     # Reported as rejected on the next exchange. Requests stay on:
                     # the shot is unusable, not the apparatus, and runmanager stops
                     # offering the row, so we run our own shot meanwhile.
-                    self.report_shot_outcome(None, 'rejected', message.strip())
+                    self.report_shot_outcome(None, BLACS_REJECTED, message.strip())
                     self.set_status("Rejected shot from runmanager")
                 else:
                     # A local override shot has no runmanager row to hold it, so stop
@@ -708,18 +709,18 @@ class ShotExecutor:
                     outcome_path = path
                     if timed_out:
                         status_text = "Programming timed out\nRequests stopped"
-                        outcome_status, reason = 'failed', 'Programming timed out'
+                        outcome_status, reason = BLACS_FAILED, 'Programming timed out'
                     elif abort:
                         status_text = "Aborted\nRequests stopped"
-                        outcome_status, reason = 'aborted', 'Aborted'
+                        outcome_status, reason = BLACS_ABORTED, 'Aborted'
                     elif restarted:
                         status_text = ("Device restarted in transition to\nbuffered. "
                                        "Aborted. Requests stopped.")
                         outcome_status, reason = (
-                            'failed', 'Device restarted while transitioning to buffered')
+                            BLACS_FAILED, 'Device restarted while transitioning to buffered')
                     else:
                         status_text = "Device(s) in error state\nRequests stopped"
-                        outcome_status, reason = 'failed', 'Device(s) in error state'
+                        outcome_status, reason = BLACS_FAILED, 'Device(s) in error state'
                     self.set_status(status_text)
                     self.stop_requesting_shots(reason)
                     self.report_shot_outcome(outcome_path, outcome_status, reason)
@@ -791,13 +792,13 @@ class ShotExecutor:
                     self.stop_requesting_shots('Device restarted during the run')
                     self.set_status("Device restarted during run.\nAborted. Requests stopped")
                     self.report_shot_outcome(
-                        path, 'failed', 'Device restarted during the run')
+                        path, BLACS_FAILED, 'Device restarted during the run')
                 elif abort:
                     # Stop as for any other shot that did not complete, so
                     # runmanager decides whether it goes back in the queue:
                     self.stop_requesting_shots('Aborted')
                     self.set_status("Aborted\nRequests stopped")
-                    self.report_shot_outcome(path, 'aborted', 'Aborted')
+                    self.report_shot_outcome(path, BLACS_ABORTED, 'Aborted')
                     
                 if abort or restarted:
                     continue                
@@ -815,7 +816,7 @@ class ShotExecutor:
                 self._abort_buffered_devices(devices_in_use, restart_function)
                 self.set_status("Error in shot execution\nRequests stopped")
                 self.report_shot_outcome(
-                    path, 'failed', 'Error in shot execution')
+                    path, BLACS_FAILED, 'Error in shot execution')
 
                 inmain(self._ui.shot_abort_button.clicked.disconnect,abort_function)
                 inmain(self._ui.shot_abort_button.setEnabled,False)
@@ -920,12 +921,12 @@ class ShotExecutor:
                 self.stop_requesting_shots(reason)
                 self.reset_failed_shot_file(path)
 
-                self.report_shot_outcome(path, 'failed', reason)
+                self.report_shot_outcome(path, BLACS_FAILED, reason)
                 continue
             
             logger.info('All devices are back in static mode.')  
 
-            self.report_shot_outcome(path, 'completed')
+            self.report_shot_outcome(path, BLACS_COMPLETED)
 
             plugins.manager.fire_event('shot_complete', path)
 
