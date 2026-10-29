@@ -27,8 +27,3 @@ Possible improvements
 * When a shot's connection table is not a subset of the apparatus's, BLACS
   rejects the shot, giving the connections that differ only as a nested
   dictionary.
-
-.. rubric:: Footnotes
-
-.. [1] Documentation taken from Phillip T. Starkey *A software framework for control and automation of precisely timed experiments*
-    Thesis, Monash University (2019) https://doi.org/10.26180/5d1db8ffe29ef
