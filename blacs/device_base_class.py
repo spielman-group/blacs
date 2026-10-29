@@ -426,10 +426,10 @@ class DeviceTab(Tab):
         # Dismiss any "remote values changed" dialog.
         self._changed_widget.hide()
         
-        results = yield(self.queue_work(self._primary_worker,'program_manual',self._last_programmed_values))
-        for worker in self._secondary_workers:
-            if results:
-                returned_results = yield(self.queue_work(worker,'program_manual',self._last_programmed_values))
+        results = {}
+        for worker in [self._primary_worker] + self._secondary_workers:
+            returned_results = yield(self.queue_work(worker,'program_manual',self._last_programmed_values))
+            if returned_results:
                 results.update(returned_results)
         
         # A worker that returns values is coercing the front panel to them.
@@ -449,15 +449,16 @@ class DeviceTab(Tab):
     
     @define_state(MODE_MANUAL,True)
     def check_remote_values(self):
-        self._last_remote_values = yield(self.queue_work(self._primary_worker,'check_remote_values'))
-        for worker in self._secondary_workers:
-            if self._last_remote_values:
-                returned_results = yield(self.queue_work(worker,'check_remote_values'))
-                self._last_remote_values.update(returned_results)
+        remote_values = {}
+        for worker in [self._primary_worker] + self._secondary_workers:
+            returned_results = yield(self.queue_work(worker,'check_remote_values'))
+            if returned_results:
+                remote_values.update(returned_results)
+        self._last_remote_values = remote_values
         
         # Raise when nothing came back, so the timeout does not call this again and
         # again, filling the output box with the same error.
-        if not self._last_remote_values or not isinstance(self._last_programmed_values, dict):
+        if not self._last_remote_values:
             raise Exception('Failed to get remote values from device. Is it still connected?')
             
         overall_changed = False
