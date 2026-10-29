@@ -24,6 +24,10 @@ import blacs.plugins as plugins
 
 logger = logging.getLogger('BLACS.FrontPanelSettings')
 
+# A tab's saved data is the repr of a dict, whose numpy values name only what
+# numpy's namespace holds.
+_SAVE_DATA_NAMESPACE = dict(vars(numpy), np=numpy, numpy=numpy)
+
 class FrontPanelSettings:
     def __init__(self,settings_path,connection_table):
         self.settings_path = settings_path
@@ -61,11 +65,12 @@ class FrontPanelSettings:
 
                 for row in dataset:
                     tab_name = ensure_str(row['tab_name'])
-                    tab_data.setdefault(tab_name,{})
                     try:
-                        tab_data[tab_name] = {'notebook':row['notebook'], 'page':row['page'], 'visible':row['visible'], 'data':eval(ensure_str(row['data']))}
+                        data = eval(ensure_str(row['data']), _SAVE_DATA_NAMESPACE)
                     except Exception:
-                        logger.info("Could not load tab data for %s"%tab_name)
+                        logger.warning(f'Could not read the saved data of {tab_name}, which starts without it')
+                        data = {}
+                    tab_data[tab_name] = {'notebook':row['notebook'], 'page':row['page'], 'visible':row['visible'], 'data':data}
 
                 tab_data['BLACS settings'] = dict(dataset.attrs)
 
