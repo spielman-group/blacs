@@ -35,6 +35,8 @@ import time
 import platform
 import importlib.metadata
 WINDOWS = platform.system() == 'Windows'
+# How long a quit waits for the shot loop to abort and report the shot in hand.
+SHOT_STOP_TIMEOUT = 30
 
 # No splash update for Qt - the splash code has already imported it:
 from qtutils import inmain_later, inthread, UiLoader
@@ -119,10 +121,20 @@ class BLACSWindow(ThemedWindow, QMainWindow):
                 subprocess.Popen([sys.executable] + sys.argv)
         else:
             event.ignore()
-            logger.info('destroy called')
             if not self.blacs.exiting:
+                logger.info('destroy called')
                 self.blacs.exiting = True
+                # The shot in hand is aborted, and reported, before the workers its
+                # devices need to abort are shut down.
                 self.blacs.shot_executor.stop()
+                self.blacs.shot_stop_deadline = time.time() + SHOT_STOP_TIMEOUT
+            elif not self.blacs.exit_started and (
+                not self.blacs.shot_executor.manager.is_alive()
+                or time.time() > self.blacs.shot_stop_deadline
+            ):
+                if self.blacs.shot_executor.manager.is_alive():
+                    logger.warning('The shot loop did not stop; quitting anyway')
+                self.blacs.exit_started = True
                 self.blacs.settings.close()
                 self.blacs.server.shutdown()
                 plugins.manager.close_plugins()
@@ -163,6 +175,8 @@ class BLACS(LabscriptGuiApplication):
         self.qt_application = application
         self._relaunch = False
         self.exiting = False
+        self.exit_started = False
+        self.shot_stop_deadline = None
         self.exit_complete = False
 
         logger.info('Loading BLACS ui')

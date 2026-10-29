@@ -5,6 +5,7 @@
 field cannot leave a second copy describing something that no longer exists.
 """
 import logging
+import queue
 import sys
 import threading
 import types
@@ -127,6 +128,7 @@ def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):
     executor._current_shot_id = None
     executor._next_rep_index = {}
     executor._runmanager_request_client = None
+    executor.notify_queue = queue.Queue()
     executor._runmanager_request_error_logged = False
     executor.local_error = None
     executor.published_status = PublishedStatus('', None, None)

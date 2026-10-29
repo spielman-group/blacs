@@ -87,6 +87,9 @@ class ShotExecutor:
         self.master_pseudoclock = self.BLACS.connection_table.master_pseudoclock
         self._runmanager_request_client = RunmanagerClient()
         self._runmanager_request_error_logged = False
+        # The queue tabs report to, so abort signals can be put to it when tabs
+        # never respond and are restarted by the user. Replaced for each shot.
+        self.notify_queue = queue.Queue()
         # Why requests were stopped, read from outside this class so a runmanager
         # user who is not at BLACS can be shown it.
         self.local_error = None
@@ -229,9 +232,13 @@ class ShotExecutor:
         self._current_shot_id = None
 
     def stop(self):
-        """Stop shot execution. Called from the GUI thread as BLACS closes."""
+        """Stop shot execution, as BLACS closes. A shot being programmed or run is
+        aborted, as the Abort button does; one being saved, or starting just as
+        this is called, completes. The loop's thread ends once it has reported
+        that shot. Called from the GUI thread."""
         self._runmanager_link.shutdown()
         self.manager_running = False
+        self.notify_queue.put(['Shot Executor', 'abort'])
 
     def final_report_pending(self):
         """Whether the loop still owes runmanager a word about a shot.
@@ -501,10 +508,6 @@ class ShotExecutor:
         # HDF5 prints errors that are not errors; h5py silences them in the main
         # thread on import, so silence them in this thread too.
         h5py._errors.silence_errors()
-        
-        # The queue tabs report to, so abort signals can be put to it when tabs
-        # never respond and are restarted by the user.
-        self.notify_queue = queue.Queue()
 
         timeout_limit = 300 #seconds
         self.set_status("Idle")

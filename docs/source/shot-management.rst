@@ -393,6 +393,11 @@ Shot execution follows this pattern:
     and is only let go of once runmanager has taken it, so a momentary outage
     cannot lose one. Runmanager, not BLACS, submits completed shots to lyse.
 
+Closing BLACS during a shot aborts it, as the Abort button does, unless the
+shot is already transitioning back to manual mode, which completes. BLACS waits
+up to 30 seconds for the shot loop to report the outcome before it shuts down
+the device workers, so the devices are taken out of buffered mode first.
+
 If BLACS is closed while holding an outcome it never delivered, that shot is
 named in the log at warning level. The row is not stranded — the next BLACS to
 ask that runmanager for work is offered it again under the same identifier —

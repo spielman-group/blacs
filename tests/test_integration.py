@@ -196,6 +196,8 @@ class IntegrationFixture:
         # Whether the operator presses Abort while the next shot is under way,
         # which exercises the latch a shot failing on the hardware sets.
         self.abort_next_shot = False
+        # Whether BLACS is closed while the next shot is under way.
+        self.close_during_next_shot = False
         self.shots_run = []
         self.while_running = []
         self.passes_left = 0
@@ -267,6 +269,9 @@ class IntegrationFixture:
             # What the Abort button queues. The loop reads it in the same turn
             # as the shot finishing, and an abort takes precedence.
             self.executor.notify_queue.put(['Shot Executor', 'abort'])
+        if self.close_during_next_shot:
+            self.close_during_next_shot = False
+            self.executor.stop()  # what closing the window does
         self.while_running.append(
             {
                 'rows': self.runmanager.rows(),
@@ -481,6 +486,22 @@ class RejectedShotTests(IntegrationFixture, unittest.TestCase):
     row and stops offering it, so the two do not trade the same refusal once a
     second.
     """
+
+    def test_closing_blacs_during_a_shot_aborts_it_and_tells_runmanager(self):
+        shot = self.make_shot_file('shot_a.h5')
+        self.runmanager.queue_manager.enqueue([{'path': shot, 'compiled': True}])
+        self.close_during_next_shot = True
+
+        self.executor.requesting_shots = True
+        self.run_loop(passes=3)
+        # What the loop's thread does on its way out:
+        self.executor._deliver_or_name_held_outcome()
+
+        self.assertEqual(self.shots_run, [shot], 'the loop ended with the shot')
+        rows = self.runmanager.rows()
+        self.assertEqual([(row['path'], row['state']) for row in rows], [(shot, 'failed')])
+        self.assertIn('Aborted', rows[0]['tooltip'])
+        self.assertEqual(self.runmanager.analysis_submission.submitted, [])
 
     def test_blacs_reports_it_and_carries_on(self):
         shot = self.make_shot_file('shot_a.h5')
