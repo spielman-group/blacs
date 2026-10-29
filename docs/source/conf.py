@@ -11,6 +11,7 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import copy
+import datetime
 import os
 from pathlib import Path
 from jinja2 import FileSystemLoader, Environment
@@ -19,7 +20,7 @@ import importlib.metadata
 # -- Project information (unique to each project) -------------------------------------
 
 project = "blacs"
-copyright = "2020, labscript suite"
+copyright = f"2013–{datetime.date.today().year}, labscript suite contributors"
 author = "labscript suite contributors"
 
 # The full version, including alpha/beta/rc tags
@@ -50,8 +51,13 @@ extensions = [
 
 autodoc_typehints = 'description'
 autosummary_generate = True
+# blacs.plugins has a class Callback and a class callback, the pages of which would
+# have the same file name on a case-insensitive file system:
+autosummary_filename_map = {'blacs.plugins.callback': 'blacs.plugins.callback-decorator'}
 numfig = True
-autodoc_mock_imports = ['labscript_utils']
+# Importing labscript_utils.h5_lock connects to a zlock server, and starts one if
+# none is running on localhost:
+autodoc_mock_imports = ['labscript_utils.h5_lock']
 
 # mock missing site package methods
 import site
@@ -99,18 +105,16 @@ intersphinx_mapping = {
     'scipy': ('https://docs.scipy.org/doc/scipy/', None),
     'pandas': ('https://pandas.pydata.org/pandas-docs/stable/', None),
     'qtutils': ('https://qtutils.readthedocs.io/en/stable/', None),
-    'pyqtgraph': (
-        'https://pyqtgraph.readthedocs.io/en/latest/',
-        None,
-    ),
+    'pyqtgraph': ('https://pyqtgraph.readthedocs.io/en/latest/', None),
     'matplotlib': ('https://matplotlib.org/stable/', None),
     'h5py': ('https://docs.h5py.org/en/stable/', None),
-    'pydaqmx': ('https://pythonhosted.org/PyDAQmx/', None),
+    # An inventory of the PyQt6 docs, made with
+    # https://github.com/MSLNZ/msl-qt/blob/master/docs/create_pyqt_objects.py (MIT
+    # License). The names of Qt classes and methods are the same in PySide6 and PyQt6.
     'qt': (
         'https://www.riverbankcomputing.com/static/Docs/PyQt6/',
         'pyqt6-modified-objects.inv',
-    ),  # PyQt6's classes with short aliases, after MSLNZ/msl-qt's
-    # create_pyqt_objects.py (MIT License)
+    ),
 }
 
 # list of all labscript suite components that have docs
@@ -187,6 +191,7 @@ if project != "the labscript suite":
 # Make `some code` equivalent to :code:`some code`
 default_role = 'code'
 
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -195,7 +200,7 @@ default_role = 'code'
 html_theme = "sphinx_rtd_theme"
 html_title = "labscript suite | {project}".format(
     project=project
-    if project != "labscript-suite"
+    if project != "the labscript suite"
     else "experiment control and automation"
 )
 html_short_title = "labscript suite"

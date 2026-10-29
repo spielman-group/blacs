@@ -28,4 +28,4 @@ A graphical interface to scientific instruments and experiment supervision.
    Source Code <https://github.com/labscript-suite/blacs>
    PyPI <https://pypi.org/project/blacs/>
    Anaconda Cloud <https://anaconda.org/labscript-suite/blacs>
-   BitBucket Archive <http://bitbucket-archive.labscriptsuite.org/#!/labscript_suite/blacs>
+
