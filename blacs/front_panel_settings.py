@@ -215,7 +215,7 @@ class FrontPanelSettings:
                     if hdf5_file['/'].get('front_panel') is not None:
                         if not silent:
                             overwrite = self.blacs.question_dialog(
-                                f"This file '{current_file}' already contains a connection table.\n\n"
+                                f"This file '{current_file}' already contains a front panel configuration.\n\n"
                                 "Do you wish to replace the existing front panel configuration "
                                 "in this file?",
                                 default_no=True,
@@ -268,21 +268,23 @@ class FrontPanelSettings:
             for hardware_name, data in device_state["front_panel_settings"].items():
                 if data != {}:
                     if isinstance(data['base_value'], (str, bytes)):
-                        logger.warning('Could not save data for channel %s on device %s because support for output values that are strings is not yet supported.'%(hardware_name, device_name))
+                        logger.debug('Could not save data for channel %s on device %s because support for output values that are strings is not yet supported.'%(hardware_name, device_name))
                     elif float(data['base_value']) == data['base_value']:
-                        front_panel_list.append((data['name'],
-                                                 device_name,
-                                                 hardware_name,
+                        # Encoded here, as numpy would encode a str in an 'S' field as
+                        # ASCII; restore() decodes UTF-8.
+                        front_panel_list.append((data['name'].encode(),
+                                                 device_name.encode(),
+                                                 hardware_name.encode(),
                                                  data['base_value'],
                                                  data['locked'],
                                                  data['base_step_size'] if 'base_step_size' in data else 0,
-                                                 data['current_units'] if 'current_units' in data else ''
+                                                 data.get('current_units', '').encode()
                                                 )
                                                )
                     else:
                         logger.warning('Could not save data for channel %s on device %s because the output value (in base units) was not a string or could not be coerced to a float without loss of precision'%(hardware_name, device_name))
 
-            od = repr(device_state["saved_data"])
+            od = repr(device_state["saved_data"]).encode()
             other_data[device_name] = od
             max_od_length = len(od) if len(od) > max_od_length else max_od_length
 
@@ -297,7 +299,7 @@ class FrontPanelSettings:
         tab_data = numpy.empty(len(other_data),dtype=[('tab_name','S256'),('notebook','S2'),('page',int),('visible',bool),('data','S'+str(max_od_length))])
         for i, (device_name, od) in enumerate(other_data.items()):
             place = notebook_data.get(device_name, {"notebook": 0, "page": 0, "visible": False})
-            tab_data[i] = (device_name,place["notebook"],place["page"],place["visible"],od)
+            tab_data[i] = (device_name.encode(),place["notebook"],place["page"],place["visible"],od)
 
         dataset = data_group.create_dataset("_notebook_data",data=tab_data)
         dataset.attrs['plugin_data'] = repr(plugin_data)
