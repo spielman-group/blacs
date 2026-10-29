@@ -7,7 +7,7 @@ by a quit message (upstream 4c0f058, bfaaf25, f89cc2b, 69a2dd3, d00b690). This d
 says what operators, device authors and the shot loop rely on, where the fork differs,
 and how far a worker's cleanup goes to release its hardware, NI-DAQmx tasks above all.
 Line numbers are of blacs `3ac393b` ("fork"), upstream/master `a3cb37a` ("upstream"),
-labscript-devices `8fdcc7b`, spielman-devices `874e25e` and zprocess `1b9de75`.
+labscript-devices `9009e07`, spielman-devices `874e25e` and zprocess `1b9de75`.
 
 ## Requirements
 
@@ -90,6 +90,10 @@ labscript-devices `8fdcc7b`, spielman-devices `874e25e` and zprocess `1b9de75`.
   (process_tree.py:219, 1575); heartbeat failure calls it in a thread of its own, then
   exits when the kill lock is free `PARENT_DEATH_TIMEOUT` later (278-281). The quit
   fills the default 10 s exactly; the worker sets 15 s, so its own deadlines govern.
+  A send to a lost parent never returns: its PAIR socket, not reconnecting (1534-1545),
+  never becomes writable again, and the worker's `WriteQueue` has no timeout or child
+  to check (497). So the hook first interrupts `to_parent` (523), and the main thread
+  drops a send that raises `Interrupted` (upstream 1121, 1152) and takes the quit.
 
 ### Message flows
 
@@ -109,7 +113,12 @@ labscript-devices `8fdcc7b`, spielman-devices `874e25e` and zprocess `1b9de75`.
   callback setting `tab.shutdown_workers_complete`, called at once for a closed or
   failed state machine (898-900). `finalise_quit` closes a tab once that is set, after
   2 s, or in `'fatal error'`, `'stopping'` or `'stopped'`, in a thread (474-490), and
-  quits after (508). A worker that will not exit holds it 2 s + `WORKER_QUIT_TIMEOUT`.
+  quits after (508). A tab whose worker will not exit delays the quit by at most 2 s
+  for the state, 2 s for the job thread, 1 s per worker for its quit message and
+  `WORKER_QUIT_TIMEOUT`, plus R9's 5 s per remote request. The wait for a worker's
+  startup to cancel is not bounded (F10): it ends when a local `Popen` or a name lookup
+  returns, and to stop waiting sooner blacs would need a thread to kill a child that
+  `Popen` returns later.
 - **Fatal error.** Stop running states, show the error, set `'fatal error'`, disable
   the error's close button, `_end_workers` in a thread (upstream 301-315).
 
@@ -129,13 +138,33 @@ thread (463-475); `abort_buffered`, `start_run` and `transition_to_manual` (481,
 | `blacs/tab_base_classes.py` | `StateMachine`, job thread; merged display update, set only on change | 4c0f058, bfaaf25, f89cc2b | +228 −198 |
 | same | timeouts, `_end_workers`, worker receiver, `_quit` | 69a2dd3 | +109 −26 |
 | same | Stop/Start, `Worker.shutdown`, fatal error ends workers | d00b690 | +118 −7 |
-| same | F2, F3 with the lost parent, F10; F9 drops `shutdown_workers` | fork | +21 −8 |
+| same | F2, F3 with the lost parent, F10; F9 drops `shutdown_workers` | fork | +28 −8 |
 | `blacs/tab_frame.ui` | `button_stop` | d00b690 | +14 |
 | `blacs/__main__.py` | `finalise_quit` stopped states; `on_save_exit` (F9) | d00b690, fork | +5 −5 |
 | `blacs/shot_execution.py` | "restarted or stopped" (741, 821) | d00b690 | 2 |
 | `docs/source/device-tabs.rst` | 234-240: main thread and job thread | fork | 5 |
-| `tests/` | see Tests | fork | +200 |
+| `tests/` | see Tests | fork | +80 |
 | `DEEP_PASS.md` | 42-44: the entry moves to what CodeHealth carries | fork | 3 |
+
+### Build
+
+The build applies upstream's five commits as they are, with upstream's later edits to
+their lines (23376cd's logging arguments, 7a8f018's `Icon`), then adds each F-item as
+a commit of its own, and nothing else. Once built,
+`git diff upstream/master CodeHealth -- blacs/tab_base_classes.py` holds only F-items.
+
+| Upstream | Taken | Except |
+| --- | --- | --- |
+| bfaaf25, f89cc2b | as is | |
+| 4c0f058 | as is | `close()` leaves `interrupt_startup()` to `finalise_close_tab` (F10) |
+| 69a2dd3 | as is | `_end_workers` catches `ProcessExited` (F2); the worker runs `shutdown()` on quit and on a lost parent, dropping its sends to a lost parent (F3) |
+| d00b690 | as is | Stop calls `_stop_workers` (F7); `shutdown_workers` goes, with `on_save_exit`'s call (F9); the status texts are in `shot_execution.py` (F1) |
+
+Apart from these commits, the file differs from upstream today by F4, F11 and the
+style pass: docstrings, comments, f-strings, `class X:`, commented-out code, an unused
+import and an attribute nothing reads, in 111 places: 121 of the fork's lines against
+193 of upstream's. The build takes upstream's text for these, and the example tab's
+`button=None` (upstream 9fa23e7).
 
 ### Where the fork differs from upstream
 
@@ -143,9 +172,10 @@ thread (463-475); `abort_buffered`, `start_run` and `transition_to_manual` (481,
 - F2. `_end_workers` catches `ProcessExited` with `TimeoutError` (upstream 853-854),
   which the fork's zprocess raises from a put to an exited local worker
   (process_tree.py:515-516, 1510). Uncaught, it ends a restart before the rebuild.
-- F3. The worker runs `shutdown()` on quit and on a lost parent (R10), for NI-DAQmx.
-  Upstream ends workers after a fatal error without it, its quit runs no device code
-  before `os._exit`, and nor does its heartbeat failure (process_tree.py:281).
+- F3. The worker runs `shutdown()` on quit and on a lost parent (R10), for NI-DAQmx,
+  dropping its sends to a lost parent. Upstream ends workers after a fatal error
+  without it, its quit runs no device code before `os._exit`, and nor does its
+  heartbeat failure (process_tree.py:281).
 - F10. `StateMachine.close()` calls `interrupt_startup()` (upstream 326), which sets
   the cancel, then waits without timeout until `subprocess()` returns (zprocess
   process_tree.py:1188-1201, 1108); the cancel does not cut short a local `Popen` or a
@@ -154,13 +184,15 @@ thread (463-475); `abort_buffered`, `start_run` and `transition_to_manual` (481,
   Stop and a fatal error (upstream 847). Each close starts that thread at once.
 - F2, F3 with its use of the hook, F7 and F10 are offered upstream as one pull request,
   and zprocess's `on_parent_death` hook to zprocess's upstream (Ian).
-- F4. The fork's workerarg rule stays (fork 843), now refusing `shutdown` too.
+- F4. The fork's workerarg rule stays (fork 843): a workerarg overrides a device
+  worker's class attribute, its default, and only the Worker base class's names are
+  refused, now `shutdown` too. Upstream refuses any name the worker has.
 - F5. The Qt lock comment (fork 61-63) goes with the blocking `get` it explains;
   `_initialise_worker` runs first as it is queued at priority -1 (502).
 - F6. Upstream b52c85a, a shot's tab transitions in the main thread per group, builds
   on 4c0f058; it follows this change, ported into `shot_execution.py`'s loop.
 - F7. Stop calls a private `Tab._stop_workers`, not upstream's `Tab.stop` (upstream
-  927): PulseBlaster/blacs_tabs.py:156 and NarwhalPulseGenerator/blacs_tabs.py:384
+  927): PulseBlaster/blacs_tabs.py:155 and NarwhalPulseGenerator/blacs_tabs.py:384
   define a `stop` state that stops the board, so Stop would queue that instead.
   Upstream labscript-devices has both (PulseBlaster:183, NarwhalPulseGenerator:384).
 - F8. The worker's receiver thread keeps upstream's name, `Worker._receive` (upstream
@@ -172,6 +204,10 @@ thread (463-475); `abort_buffered`, `start_run` and `transition_to_manual` (481,
   (fork __main__.py:452-453), which would skip it silently; `_end_workers`'s timeout
   replaces `finalise_close_tab`'s own (fork 596-601). `Worker.shutdown()` takes no
   arguments: of 25 overrides one calls `super()`'s, and PineBlaster's `abort` calls it.
+- F11. `PluginTab` has `get_device_save_data()` (fork 963-965): a shot file's tab data
+  calls it on every tab (front_panel_settings.py:210), plugin tabs among them
+  (__main__.py:271). Upstream's `PluginTab` has none (upstream 1248-1256), so the call
+  fails for a plugin tab.
 
 ## What the quit gives NI-DAQmx
 
@@ -201,25 +237,28 @@ labscript-devices has 35 `@define_state` and 35 `queue_work(` uses, spielman-dev
 
 - `TriggerableCameraWorker.shutdown()` aborts and joins a shot still acquiring before
   it closes the camera, and does not resume continuous acquisition paused for the shot
-  (common/triggerable_camera/blacs_workers.py:533-540; labscript-devices 8fdcc7b,
-  tested by `ShutdownTests`; upstream form UpstreamBugFixes b71e7d9). The abort leaves
-  an Andor unarmed (AndorSolis/blacs_workers.py:75-78), so its `shutdown`, which
-  refuses an armed camera (andor_utils.py:647-651), needs no change.
-- `TriggerableCameraTab` shuts its image receiver in a `restart` override
-  (blacs_tabs.py:375-378), which comes before `shutdown()`. In continuous mode
-  `shutdown()` then never returns: the continuous thread waits for the gone receiver
-  on a REQ socket with no timeout (blacs_workers.py:265, 324), and `stop_continuous`
-  joins it (356). A `close_tab` override fails the same way when a restart reaches its
-  2 s timeout, as `close_tab(finalise=False)` runs before `_end_workers`. Change, in
-  labscript-devices: override `finalise_close_tab`, shutting the receiver after the
-  base has ended the workers. Stop keeps it until Start.
+  (common/triggerable_camera/blacs_workers.py:554-563). `abort()` disarms a camera
+  armed for a shot whether or not its acquisition thread exists or has started (419,
+  432, 533-538), and a worker whose `init` failed part way still closes its camera
+  (244-249, 555-556). These are labscript-devices 8fdcc7b, c2496ce and 9009e07, with
+  tests; upstream forms UpstreamBugFixes b71e7d9, 1fed408 and 36ac52a. The abort
+  leaves an Andor unarmed (AndorSolis/blacs_workers.py:75-78), so its `shutdown`,
+  which refuses an armed camera (andor_utils.py:647-651), needs no change.
+- The continuous thread polls for the tab's reply to each frame every 100 ms and gives
+  up once continuous acquisition is stopped, its REQ socket relaxed and correlated
+  (blacs_workers.py:272-276, 338-340; 9009e07, upstream form fe3768b). So
+  `stop_continuous` (369-375) returns once BLACS has died. `TriggerableCameraTab` shuts
+  its image receiver in a `restart` override (blacs_tabs.py:375-378), before
+  `shutdown()`, as would a `close_tab` override when a restart reaches its 2 s timeout.
+  Change, in labscript-devices, for R11: override `finalise_close_tab`, shutting the
+  receiver after the base has ended the workers. Stop keeps it until Start.
 - `close_tab` overrides (CiceroOpalKellyXEM3001/blacs_tabs.py:73, EnviroMUX/
   blacs_tabs.py:157, arduino_tabs.py:43) run when a stopped tab is started, not on Stop.
   Meanwhile the Arduino loop (arduino_tabs.py:55-62, started at Arduino_Device/
   blacs_tabs.py:495) queues a state every 2 s and EnviroMUX's timeout (blacs_tabs.py:92)
   one more; none runs, and Start discards them. No change.
 - common/pseudoclock.py:90-96 calls `self._restart_receiver` itself, and RFBlaster/
-  blacs_tabs.py:107, 127 set `self.mode` in a state; both work as now.
+  blacs_tabs.py:82, 102 set `self.mode` in a state; both work as now.
 - Other worker threads (NI_DAQmx/blacs_workers.py:976, AlazarTechBoard/
   blacs_workers.py:139, EnviroMUX/blacs_workers.py:37) are not interrupted; they end
   where `shutdown()` stops them, or with the process.
@@ -228,32 +267,19 @@ labscript-devices has 35 `@define_state` and 35 `queue_work(` uses, spielman-dev
 
 ## Tests
 
-Tests drive real tabs and worker processes. Only hardware is faked: a task that writes
-a release file when cleared, proving the release and not just the call, and a camera.
-A `threading.Event` orders states in BLACS's process, and a file a worker's job. Of
-the present tests only tests/test_state_machine.py:63-64 changes, to `close_tab()`.
+The tests prove that each way a worker ends releases its hardware, that a hanging
+cleanup is cut off, and the camera's order. They drive real tabs and worker processes.
+Only hardware is faked: a task that writes a release file when cleared, proving the
+release and not just the call, and a camera. A worker's job writes a file once it has
+started, which the test waits for. Of the present tests only
+tests/test_state_machine.py:63-64 changes, to `close_tab()`.
 
 | Test | Requirements | How |
 | --- | --- | --- |
-| Order | R1 | The main thread queues states at priorities 1, 0 and 0, one allowed only in `MODE_BUFFERED`, and a `delete_stale_states` state twice; they run by priority then queue, without the buffered one or the stale copy. |
-| Another thread | R1, R3, R7 | A plain thread queues a state, which runs in the main thread, and sets `tab.state`, which returns before the GUI thread has run. |
-| Before the first yield | R2 | The present test, closing with `close_tab()`. |
-| Two tabs | R4, R5 | Tab A's job waits for a file; meanwhile tab B's state runs a job to its end and a `QTimer.singleShot(0)` fires. |
-| Errors | R6 | A job that raises shows its error, sends `None` to its state, and the next state runs; a job naming no method sets `'fatal error'` and the release file appears. |
-| Cleanup | R8, R10, R11 | A restart, Stop, `close_tab()` and a fatal error, each with the worker idle and in a sleeping job: the release file exists once the worker has exited. |
-| Lost parent | R10 | A helper process starts the worker and is killed; the release file appears. |
-| Bounded | R9, R10 | A `shutdown()` waiting on an event never set: the worker exits after its 5 s, with no release file. A job that ignores the interrupt is killed at `WORKER_QUIT_TIMEOUT`, set short in the parent only. A worker that has exited is ended and its tab rebuilt (F2). |
-| Stop | R12 | A stopped tab runs none of its states; Start brings up a worker that runs jobs. |
-| Quit order | R13 | `on_save_exit`, then test_integration.py's `finalise_quit` drive (693, 738-742), with tabs idle, in a job and stopped: each release file is written before `exit_complete` is set. |
-| Shot loop | R3, R14 | A tab whose restart receivers are called during a shot fails it, through `make_executor` (tests/fixtures.py:114). |
-| Camera mid-shot | R11 | labscript-devices `ShutdownTests` (8fdcc7b): `shutdown()` mid-shot ends the acquisition thread before it closes the camera. |
-| Camera restart | R11 | labscript-devices: a real `TriggerableCameraTab` on a fake camera whose `close()` writes a file; with continuous acquisition on, a job sleeps past the 2 s and the tab restarts; the file appears. |
+| Cleanup | R8, R10, R11 | A restart, Stop, `close_tab()` as BLACS quits, and a fatal error, each with the worker idle and in a sleeping job: the release file exists once the worker has exited. |
+| Lost parent | R10 | A helper process starts the worker, idle and in a sleeping job, and is killed; the release file appears. |
+| Bounded | R10 | A `shutdown()` waiting on an event never set: the worker exits after its 5 s, with no release file. |
+| Camera mid-shot | R11 | labscript-devices `ShutdownTests` (8fdcc7b), changed so its fake camera's `grab` sets an `Event` on entry: the test waits for it, calls `shutdown()`, and finds the acquisition thread ended before the camera closed. |
+| Untested by choice (Ian) | R1-R7, R9, R12-R14; R8's wait for an HDF5 file; R10's 5 s for a job; R11's 2 s for `shutdown()` as a state and the receiver kept until the worker ends; F2, F4, F7, F9, F10, F11 | |
 
-F10 has no test: the GUI thread waits only while a `Popen` or a name lookup is slow,
-and a test cannot make one slow without imitating zprocess.
-
-The blacs tests come to about 200 lines beside about 480 of code, the camera restart
-test to 40: four times rule 13's tenth. Upstream ships this code untested, its faults
-are thread and process orderings missed by hand, and an uncleared NI-DAQmx task holds
-the driver until a replug or reboot. Cut to the tenth, keep Cleanup, Lost parent,
-Bounded and Camera restart.
+The blacs tests come to about 80 lines beside about 490 of code.
