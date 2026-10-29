@@ -135,6 +135,18 @@ the quit for 2 s plus `WORKER_QUIT_TIMEOUT`, all tabs at once.
 - F6. Upstream b52c85a, a shot's tab transitions in the main thread in one pass per
   group, builds on 4c0f058. It follows this change, ported into `shot_execution.py`'s
   loop, which replaced the queue manager it rewrites.
+- F7. Stop calls a private `Tab._stop_workers`, not upstream's `Tab.stop` (upstream
+  927): PulseBlaster/blacs_tabs.py:156 and NarwhalPulseGenerator/blacs_tabs.py:384
+  define a `stop` state that stops the board, so Stop would queue that instead.
+- F8. The worker's receiver thread is `Worker._receive_commands`, not upstream's
+  `_receive` (upstream 1155), which LightCrafterDMD/blacs_workers.py:106 overrides with
+  a `_receive(deadline)` of its own. Upstream has both clashes.
+- F9. One method shuts a tab's workers down: upstream's `_shut_down_workers(callback)`
+  (upstream 916) replaces `shutdown_workers` (fork 552), and its callback sets
+  `shutdown_workers_complete`. `_end_workers`'s timeout replaces the deadline that
+  `finalise_close_tab` builds by hand (fork 596-601). `Worker.shutdown()` keeps no
+  arguments: 25 workers override it, one calls `super().shutdown()`, and PineBlaster
+  calls `self.shutdown()` in `abort`.
 
 ## What the quit message gives NI-DAQmx
 
