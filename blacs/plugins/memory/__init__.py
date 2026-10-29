@@ -21,18 +21,21 @@ FILEPATH_COLUMN = 0
 name = "Memory Profile"
 module = "memory" # should be folder name
 logger = logging.getLogger(f'BLACS.plugin.{module}')
+MEMPROF_FILEPATH = os.path.join(BLACS_DIR, 'memprof.txt')
 
 class Plugin(BasePlugin):
     def plugin_setup_complete(self, BLACS):
-        memprof.start(filepath=os.path.join(BLACS_DIR, 'memprof.txt'))
+        memprof.start(filepath=MEMPROF_FILEPATH)
 
     def get_menu_contributions(self):
         return [
             {'location': 'menubar', 'path': name, 'order': order, 'name': text,
              'action': action, 'icon': icon}
+            # A menu action is passed Qt's checked flag, which gc.collect and
+            # memprof.start would take as their argument.
             for order, (text, action, icon) in enumerate([
-                ('Garbage collect', gc.collect, ':/qtutils/fugue/memory'),
-                ('Reset profiler', memprof.start, ':/qtutils/fugue/counter-reset'),
+                ('Garbage collect', lambda: gc.collect(), ':/qtutils/fugue/memory'),
+                ('Reset profiler', lambda: memprof.start(filepath=MEMPROF_FILEPATH), ':/qtutils/fugue/counter-reset'),
                 ('Diff memory usage', memprof.check, ':/qtutils/fugue/tables'),
             ])
         ]
