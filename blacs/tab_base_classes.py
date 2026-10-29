@@ -769,8 +769,8 @@ class Tab:
                             if not success:
                                 logger.info('Worker reported exception during job')
                                 now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
-                                self.error_message += (f'Exception in worker - {now}:<br />' +
-                                               '<FONT COLOR=\'#ff0000\'>%s</FONT><br />'%escape(message).replace(' ','&nbsp;').replace('\n','<br />'))
+                                self.error_message += (f'Exception in worker - {now}:<br />'
+                                    f"<FONT COLOR='#ff0000'>{escape(message).replace(' ', '&nbsp;').replace('\n', '<br />')}</FONT><br />")
                             else:
                                 logger.debug('Job completed')
                             
@@ -796,8 +796,8 @@ class Tab:
             message = traceback.format_exc()
             logger.critical('A fatal exception happened:\n %s'%message)
             now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
-            self.error_message += (f'Fatal exception in main process - {now}:<br /> ' +
-                           '<FONT COLOR=\'#ff0000\'>%s</FONT><br />'%escape(message).replace(' ','&nbsp;').replace('\n','<br />'))
+            self.error_message += (f'Fatal exception in main process - {now}:<br /> '
+                f"<FONT COLOR='#ff0000'>{escape(message).replace(' ', '&nbsp;').replace('\n', '<br />')}</FONT><br />")
                             
             self.state = 'fatal error'
             inmain(self._ui.button_close.setEnabled,False)
