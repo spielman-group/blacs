@@ -25,7 +25,8 @@ Possible improvements
 
 * Output values that are strings are not saved with the front panel.
 * When a shot's connection table is not a subset of the apparatus's, BLACS
-  rejects the shot but does not say which connections differ.
+  rejects the shot, giving the connections that differ only as a nested
+  dictionary.
 
 .. rubric:: Footnotes
 
