@@ -96,6 +96,7 @@ from labscript_utils.qtwidgets.application import LabscriptGuiApplication
 from labscript_utils.labconfig import LabConfig, get_default_appconfig_file
 from labscript_utils.plugins import MenuContext
 from labscript_profile import hostname
+from blacs.client import DEFAULT_PORT
 from blacs.shot_execution import ShotExecutor
 from labscript_utils import device_registry
 from blacs.front_panel_settings import FrontPanelSettings
@@ -309,7 +310,7 @@ class BLACS(LabscriptGuiApplication):
         # one to describe: earlier, it would tell a runmanager throughout start-up
         # that this BLACS had failed.
         splash.update_text('starting experiment server')
-        self.server = BlacsServer(self, int(self.exp_config.get('ports', 'blacs')))
+        self.server = BlacsServer(self)
 
         splash.update_text('done')
         logger.info('showing UI')
@@ -501,6 +502,9 @@ class BLACS(LabscriptGuiApplication):
         self.settings.create_dialog()
 
 class BlacsServer(ZMQServer):
+    server = 'blacs'
+    default_port = DEFAULT_PORT
+
     def __init__(self, blacs, *args, **kwargs):
         # Set first, as the server answers from the moment it starts:
         self.blacs = blacs

@@ -15,6 +15,8 @@
 
 from labscript_utils.ls_zprocess import ZMQClient
 
+DEFAULT_PORT = 42517
+
 
 class BlacsClient(ZMQClient):
     """A client of a BLACS server.
@@ -24,7 +26,7 @@ class BlacsClient(ZMQClient):
     """
 
     server = 'blacs'
-    default_port = 42517
+    default_port = DEFAULT_PORT
 
     def get_status(self):
         """Return what BLACS is doing.

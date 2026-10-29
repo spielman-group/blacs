@@ -10,6 +10,7 @@ and the apparatus (the connection table check and the device tabs).
 """
 import os
 import shutil
+import socket
 import tempfile
 import threading
 import time
@@ -49,6 +50,13 @@ def ensure_qapplication():
         # Held for the life of the process: a garbage-collected QApplication
         # takes the Qt machinery with it.
         _qapplication = QApplication([])
+
+
+def free_port():
+    # Passed to each server, which would otherwise bind the labconfig's port.
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        return sock.getsockname()[1]
 
 
 class FakeOutputBox:
@@ -169,7 +177,9 @@ class IntegrationFixture:
         self.addCleanup(self.restore_runmanager_app)
         # Built without runmanager's __init__, which binds its configured port.
         self.runmanager_server = RunmanagerServer.__new__(RunmanagerServer)
-        ZMQServer.__init__(self.runmanager_server, bind_address='tcp://127.0.0.1')
+        ZMQServer.__init__(
+            self.runmanager_server, port=free_port(), bind_address='tcp://127.0.0.1'
+        )
         self.addCleanup(self.runmanager_server.shutdown)
         port = self.runmanager_server.port
 
@@ -196,6 +206,7 @@ class IntegrationFixture:
 
         self.blacs_server = BlacsServer(
             types.SimpleNamespace(shot_executor=self.executor),
+            port=free_port(),
             bind_address='tcp://127.0.0.1',
         )
         self.addCleanup(self.blacs_server.shutdown)
