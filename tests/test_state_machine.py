@@ -171,9 +171,12 @@ from test_state_machine import CleanupWorker
 to_worker, from_worker = CleanupWorker(ProcessTree.instance()).start(
     'main', 'device', {'directory': sys.argv[1]}
 )
-for job in ['init'] + sys.argv[2:]:
+to_worker.put(('init', (), {}))
+# The job's start, then its end, once the hardware is allocated:
+from_worker.get()
+from_worker.get()
+for job in sys.argv[2:]:
     to_worker.put((job, (), {}))
-    from_worker.get()
 print('ready', flush=True)
 time.sleep(60)
 '''
