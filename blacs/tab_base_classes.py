@@ -657,7 +657,7 @@ class Tab(object):
             icon = self.ICON_STOPPED
             tooltip = 'Stop the worker processes and release the device'
         if self._ui.button_stop.toolTip() != tooltip:
-            self._ui.button_stop.setIcon(QIcon(icon))
+            self._ui.button_stop.setIcon(Icon(icon))
             self._ui.button_stop.setToolTip(tooltip)
     
     @inmain_decorator(True)
