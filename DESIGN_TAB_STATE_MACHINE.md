@@ -56,9 +56,12 @@ labscript-devices `9009e07`, spielman-devices `874e25e` and zprocess `1b9de75`.
 
 ### What cleanup does not cover
 
-`shutdown()` does not run, or does not finish, and the tasks stay held, when:
+Cleanup is one call of `shutdown()`, not a guarantee of release. It does not run, or
+does not finish, and the tasks stay held, when:
 
 - the worker crashes;
+- `shutdown()` raises before it releases them: the worker logs the error and exits,
+  without calling it again;
 - the tab kills it, unreachable in 1 s or alive at `WORKER_QUIT_TIMEOUT`; one killed
   before its `init` runs has opened no task;
 - BLACS is killed with its workers, as a process-tree kill does; BLACS killed alone is
