@@ -692,7 +692,12 @@ class Tab(object):
         case once remote worker processes are implemented and the worker may be on a
         separate computer). The worker process will not be started immediately, it will
         be started when the state machine runs its first state. This way errors in
-        startup will be handled using the normal state machine machinery."""
+        startup will be handled using the normal state machine machinery.
+
+        Each workerarg, and each connection table property not among them, becomes an
+        attribute of the worker before its init() runs, overriding a class attribute of
+        WorkerClass. A name that Worker or zprocess's Process uses is skipped with a
+        warning."""
 
         if workerargs is None:
             workerargs = {}
@@ -1092,8 +1097,9 @@ class Worker(Process):
         import labscript_utils.h5_lock
         process_tree.zlock_client.set_process_name(log_name)
         for name, value in extraargs.items():
-            # Only the base class's own names are protected: a subclass's class
-            # attribute is a default the workerarg overrides.
+            # Only the names that Worker and its bases use, on the class or the
+            # instance, are protected: a subclass's class attribute is a default the
+            # workerarg overrides.
             if hasattr(Worker, name) or name in vars(self):
                 msg = """attribute `{}` overwrites an attribute of the Worker base class
                     with the same name. This may cause unexpected behaviour. Consider
