@@ -60,10 +60,7 @@ class MainloopTests(unittest.TestCase):
             time.sleep(0.01)
         self.assertTrue(tab.next_state_ran)
 
-        tab.close_tab(finalise=False)
-        while tab._mainloop_thread.is_alive() and time.monotonic() < deadline:
-            app.processEvents()
-            time.sleep(0.01)
+        tab.close_tab()
 
 
 if __name__ == '__main__':
