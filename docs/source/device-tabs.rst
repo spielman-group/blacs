@@ -231,14 +231,15 @@ transition_to_buffered is actually written to support an arbitrary number of wor
 processes. Further information on adding support for new devices (and how to use the state
 machine architecture) is included in :doc:`labscript-devices:adding_devices`.
 
-The state machine for each device tab runs in its own thread and follows a well defined
-workflow (also shown graphically in figure 6.4) which can be influenced by the device code.
-When an event is available in the queue (that can run in the current mode of the outer state
-machine), the inner state machine transitions to the ‘execute GUI method’ state, and calls
-the Python method that was queued up. As this method likely interacts with the GUI, the
-method is executed in the main thread (via a request to the GUI event loop provided by
-the Qt widget toolkit). This method executes (temporarily blocking interaction with the
-GUI) until it either completes, or hits the yield Python keyword. The yield keyword in
+The state machine for each device tab runs in the main thread, between the events of the
+Qt widget toolkit's GUI event loop, and follows a well defined workflow (also shown
+graphically in figure 6.4) which can be influenced by the device code. When an event is
+available in the queue (that can run in the current mode of the outer state machine), the
+inner state machine transitions to the ‘execute GUI method’ state, and calls the Python
+method that was queued up. This method executes (temporarily blocking interaction with the
+GUI) until it either completes, or hits the yield Python keyword. Work requested of a worker
+process is sent, and its results awaited, by a thread of the tab's own, so that the GUI is
+not blocked while the worker runs. The yield keyword in
 Python returns control of the program to the calling code (in this case our state machine).
 The yield keyword also allows the called method to return information to the calling code
 (for example the data variable would be returned if called as yield(data)). We utilise this
