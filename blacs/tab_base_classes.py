@@ -925,9 +925,9 @@ class Tab(object):
         if self.state in ('stopped', 'fatal error'):
             self.restart()
         else:
-            self.stop()
+            self._stop_workers()
 
-    def stop(self):
+    def _stop_workers(self):
         """Run the workers' shutdown() methods and end the worker processes. The tab
         stays open with its state machine stopped until it is restarted."""
         self._notify_restart_receivers()
