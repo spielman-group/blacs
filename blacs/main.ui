@@ -18,73 +18,6 @@
     <normaloff>:/qtutils/custom/blacs.png</normaloff>:/qtutils/custom/blacs.png</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <property name="styleSheet">
-    <string notr="true">QPushButton {
-     border: none;
-     padding: 4px;
- }
-
-QPushButton:hover {
-     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                       stop: 0 palette(light), stop: 1 palette(window));
-     border: 1px solid palette(dark);
-     border-radius: 3px;
- }
-
- QPushButton:pressed {
-     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                       stop: 0 palette(window), stop: 1 palette(light));
-     border: 1px solid palette(dark);
-     border-radius: 3px;
- }
-
-QPushButton:checked {
-     background-color: palette(highlight);
-     color: palette(highlighted-text);
-     border: 1px solid palette(dark);
-     border-radius: 3px;
- }
-
-QPushButton:hover:checked {
-     background-color: palette(highlight);
-     color: palette(highlighted-text);
-     border: 1px solid palette(highlighted-text);
-     border-radius: 3px;
- }
-
-QToolButton {
-     border: none;
-     padding: 2px;
- }
-
-QToolButton:hover {
-     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                       stop: 0 palette(light), stop: 1 palette(window));
-     border: 1px solid palette(dark);
-     border-radius: 3px;
- }
-
- QToolButton:pressed {
-     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                       stop: 0 palette(window), stop: 1 palette(light));
-     border: 1px solid palette(dark);
-     border-radius: 3px;
- }
-
-QToolButton:checked {
-     background-color: palette(window);
-     border: 1px solid palette(dark);
-     border-radius: 3px;
- }
-
-QToolButton:hover:checked {
-     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                       stop: 0 palette(window), stop: 1 palette(light));
-     border: 1px solid palette(dark);
-     border-radius: 3px;
- }
-</string>
-   </property>
    <layout class="QVBoxLayout" name="verticalLayout_13">
     <property name="spacing">
      <number>0</number>
@@ -175,7 +108,7 @@ QToolButton:hover:checked {
                   <number>0</number>
                  </property>
                  <item>
-                  <widget class="QPushButton" name="shot_request_button">
+                  <widget class="QToolButton" name="shot_request_button">
                    <property name="focusPolicy">
                     <enum>Qt::NoFocus</enum>
                    </property>
@@ -197,10 +130,16 @@ QToolButton:hover:checked {
                    <property name="checked">
                     <bool>false</bool>
                    </property>
+                   <property name="toolButtonStyle">
+                    <enum>Qt::ToolButtonTextBesideIcon</enum>
+                   </property>
+                   <property name="autoRaise">
+                    <bool>true</bool>
+                   </property>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QPushButton" name="shot_abort_button">
+                  <widget class="QToolButton" name="shot_abort_button">
                    <property name="enabled">
                     <bool>false</bool>
                    </property>
@@ -216,6 +155,12 @@ QToolButton:hover:checked {
                    <property name="icon">
                     <iconset>
                      <normaloff>:/qtutils/fugue/cross-octagon.png</normaloff>:/qtutils/fugue/cross-octagon.png</iconset>
+                   </property>
+                   <property name="toolButtonStyle">
+                    <enum>Qt::ToolButtonTextBesideIcon</enum>
+                   </property>
+                   <property name="autoRaise">
+                    <bool>true</bool>
                    </property>
                   </widget>
                  </item>
@@ -336,6 +281,9 @@ QToolButton:hover:checked {
                  <property name="icon">
                   <iconset>
                    <normaloff>:/qtutils/fugue/folder-open.png</normaloff>:/qtutils/fugue/folder-open.png</iconset>
+                 </property>
+                 <property name="autoRaise">
+                  <bool>true</bool>
                  </property>
                 </widget>
                </item>

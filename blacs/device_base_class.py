@@ -16,13 +16,14 @@ import os
 import time
 from queue import Queue
 
-from qtutils.qt.QtCore import QTimer
+from qtutils.qt.QtCore import Qt, QTimer
 from qtutils.icons import Icon
 from qtutils.qt.QtWidgets import (
     QWidget,
     QSpacerItem,
     QSizePolicy,
     QPushButton,
+    QToolButton,
     QHBoxLayout,
     QApplication,
     QVBoxLayout,
@@ -555,7 +556,11 @@ class DeviceTab(Tab):
         
             buttonWidget = QWidget()
             buttonlayout = QHBoxLayout(buttonWidget)
-            button = QPushButton(Icon(':/qtutils/fugue/arrow-turn-000-left'), "Apply")
+            button = QToolButton()
+            button.setIcon(Icon(':/qtutils/fugue/arrow-turn-000-left'))
+            button.setText("Apply")
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            button.setAutoRaise(True)
             button.clicked.connect(self.on_resolve_value_inconsistency)
             buttonlayout.addWidget(button)
             buttonlayout.addStretch()
