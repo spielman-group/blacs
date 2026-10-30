@@ -892,10 +892,11 @@ class Tab(object):
                 self.logger.exception('Could not notify a connected receiver function')
 
     def _shut_down_workers_then(self, callback):
-        """Run the workers' shutdown() methods before any other state, and then call
-        callback in the main thread, or call it after SHUTDOWN_TIMEOUT seconds if the
-        shutdown() methods have not returned. If the state machine is not running,
-        call callback at once. Called in the main thread."""
+        """Run the workers' shutdown() methods before any other state, and then close
+        the state machine and call callback in the main thread, or call it after
+        SHUTDOWN_TIMEOUT seconds if the shutdown() methods have not returned. If the
+        state machine is not running, call callback at once. Called in the main
+        thread."""
         if self._statemachine.closed or self._statemachine.failed:
             callback()
             return
@@ -917,6 +918,8 @@ class Tab(object):
     def _shut_down_workers(self, callback):
         for worker_name in self.workers:
             yield (self.queue_work(worker_name, 'shutdown'))
+        # The workers are ended next, so no state may reopen the hardware:
+        self._statemachine.close()
         callback()
 
     def _on_stop_clicked(self):
