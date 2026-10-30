@@ -90,9 +90,10 @@ labscript-devices `9009e07`, spielman-devices `874e25e` and zprocess `1b9de75`.
   (process_tree.py:219, 1575); heartbeat failure calls it in a thread of its own, then
   exits when the kill lock is free `PARENT_DEATH_TIMEOUT` later (278-281). The quit
   fills the default 10 s exactly; the worker sets 15 s, so its own deadlines govern.
-  A send to a lost parent never returns: its PAIR socket, not reconnecting (1534-1545),
-  never becomes writable again, and the worker's `WriteQueue` has no timeout or child
-  to check (497). So the hook first interrupts `to_parent` (523), and the main thread
+  Without a shared secret, a send to a lost parent never returns: its PAIR socket, not
+  reconnecting (1534-1545), never becomes writable again, and the worker's `WriteQueue`
+  has no timeout or child to check (497). With one, the socket stays writable and the
+  send is queued, so the suite, run with a shared secret, does not reach this case. So the hook first interrupts `to_parent` (523), and the main thread
   drops a send that raises `Interrupted` (upstream 1121, 1152) and takes the quit.
 
 ### Message flows
