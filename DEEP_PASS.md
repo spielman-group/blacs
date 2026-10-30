@@ -36,12 +36,17 @@ closes the window), 177f213, 8ff163e, the loop-wide handler of 80a3f0d,
 fork's) and 79d460e's classifiers. The floors are Python 3.13, qtutils 4.4.1
 and zprocess 3.0.1.
 
+The tab state machine on the main thread (bfaaf25, 4c0f058, f89cc2b), with
+workers ended by a quit message and the Stop button (69a2dd3, d00b690), is
+upstream's: `tab_base_classes.py` differs from upstream's only by the fork's
+changes in `DESIGN_TAB_STATE_MACHINE.md` (F2 to F4, F7, F9 to F12). A worker's
+cleanup on a lost parent needs zprocess's `on_parent_death` hook (zprocess
+33b3618).
+
 Not ported:
 
-- The tab state machine on the main thread (4c0f058, bfaaf25, f89cc2b), with
-  workers ended by a quit message and the Stop button (69a2dd3, d00b690), waits
-  for its design's review: `DESIGN_TAB_STATE_MACHINE.md`. b52c85a, the shot's
-  tab transitions on the main thread, builds on it.
+- b52c85a, the shot's tab transitions on the main thread per group, is to be
+  ported into `shot_execution.py`'s loop (`DESIGN_TAB_STATE_MACHINE.md`, F6).
 - Opening a shot file once (5689970) is deferred (Ian).
 - BLACS has no queue, analysis submission or pushed shots, which runmanager
   owns here: 2b6ec46, a10b3f8, 9bc1131, 1612e88, 66a7f4a, 6de2b2b, 905a1fe,
