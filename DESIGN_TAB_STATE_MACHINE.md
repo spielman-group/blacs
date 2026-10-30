@@ -349,7 +349,7 @@ tests/test_state_machine.py:63-64 changes, to `close_tab()`.
 
 | Test | Requirements | How |
 | --- | --- | --- |
-| Cleanup | R8, R10, R11 | A restart, Stop, BLACS's quit (`shutdown_workers()`, then the close at its next poll) and a fatal error, the first three with the worker idle and in a sleeping job; a quit with a state queued behind its shutdown (F13); a quit during a restart (F15); a `shutdown()` that raises after its release (F3): once every worker has exited, the log shows one allocation and one release per worker. |
+| Cleanup | R8, R10, R11 | A restart, Stop, BLACS's quit (`shutdown_workers()`, then the close at its next poll) and a fatal error, the first three with the worker idle and in a sleeping job; a quit with a state queued behind its shutdown (F13); a quit during a restart (F15); a `shutdown()` that raises after its release, and one that outlasts the tab's 2 s (F3): once every worker has exited, the log shows one allocation and one release per worker. |
 | Lost parent | R10 | A helper process starts the worker, idle and in a sleeping job, and is killed; the log shows the release. |
 | Bounded | R10 | A `shutdown()` that logs its start and waits on an event never set: the worker exits after its 5 s, with no release. |
 | Camera mid-shot | R11 | labscript-devices `ShutdownTests` (8fdcc7b), changed so its fake camera's `grab` sets an `Event` on entry: the test waits for it, calls `shutdown()`, and finds the acquisition thread ended before the camera closed. |

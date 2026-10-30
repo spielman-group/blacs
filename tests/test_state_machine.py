@@ -106,6 +106,13 @@ class RaisingWorker(CleanupWorker):
         raise RuntimeError('An error after the release')
 
 
+class SlowWorker(CleanupWorker):
+    def shutdown(self):
+        # Outlasts the tab's wait for it, after which the tab ends the worker:
+        time.sleep(Tab.SHUTDOWN_TIMEOUT + 1)
+        super().shutdown()
+
+
 class HangingWorker(CleanupWorker):
     def shutdown(self):
         self.record('h')
@@ -147,9 +154,14 @@ ENDS = {
     'quit during a restart': lambda tab: (tab.restart(), quit_blacs(tab)),
     'fatal error': lambda tab: tab.fail(),
     'raising shutdown': quit_blacs,
+    'slow shutdown': quit_blacs,
     'hanging shutdown': quit_blacs,
 }
-WORKERS = {'raising shutdown': RaisingWorker, 'hanging shutdown': HangingWorker}
+WORKERS = {
+    'raising shutdown': RaisingWorker,
+    'slow shutdown': SlowWorker,
+    'hanging shutdown': HangingWorker,
+}
 
 # Starts a worker, idle or in a sleeping job, so that the test can kill its parent:
 PARENT = '''
