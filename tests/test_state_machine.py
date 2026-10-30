@@ -119,6 +119,17 @@ class HangingWorker(CleanupWorker):
         threading.Event().wait()
 
 
+class LateQuitWorker(CleanupWorker):
+    @property
+    def sleep(self):
+        # Looked up once the job's request is taken, before the job starts: holds the
+        # job there until the worker is told to quit.
+        (Path(self.directory) / 'started').touch()
+        while not self._quitting.locked():
+            time.sleep(0.01)
+        return super().sleep
+
+
 class CleanupTab(Tab):
     def __init__(self, notebook, settings, restart=False):
         super().__init__(notebook, settings, restart)
@@ -146,18 +157,26 @@ def quit_blacs(tab):
     inthread(tab.finalise_close_tab, tab.close_tab(finalise=False))
 
 
+def quit_as_a_job_starts(tab):
+    tab.sleep()
+    wait_until(lambda: (tab.settings['directory'] / 'started').exists())
+    quit_blacs(tab)
+
+
 ENDS = {
     'restart': lambda tab: tab.restart(),
     'stop': lambda tab: tab._ui.button_stop.click(),
     'quit': quit_blacs,
     'quit with a state queued': lambda tab: (tab.allocate(), quit_blacs(tab)),
     'quit during a restart': lambda tab: (tab.restart(), quit_blacs(tab)),
+    'quit as a job starts': quit_as_a_job_starts,
     'fatal error': lambda tab: tab.fail(),
     'raising shutdown': quit_blacs,
     'slow shutdown': quit_blacs,
     'hanging shutdown': quit_blacs,
 }
 WORKERS = {
+    'quit as a job starts': LateQuitWorker,
     'raising shutdown': RaisingWorker,
     'slow shutdown': SlowWorker,
     'hanging shutdown': HangingWorker,
