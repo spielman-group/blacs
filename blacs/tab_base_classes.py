@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /blacs/tab_base_classes.py                                        #
+# /tab_base_classes.py                                              #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -26,13 +26,12 @@ from bisect import insort
 
 from qtutils.qt.QtCore import Qt, QTimer
 from qtutils.qt.QtGui import QColor, QPalette
-from qtutils.icons import Icon
 from qtutils.qt.QtWidgets import QLabel, QWidget, QPushButton, QApplication, QVBoxLayout
 
 from qtutils import inmain_decorator, inmain, inthread, UiLoader
 from labscript_utils.qtwidgets.outputbox import OutputBox
-# Imported for its side effect: it registers the :/qtutils icon resources.
 import qtutils.icons
+from qtutils.icons import Icon
 
 from labscript_utils.qtwidgets.elide_label import elide_label
 from labscript_utils.ls_zprocess import ProcessTree, RemoteProcessClient
@@ -43,8 +42,9 @@ process_tree = ProcessTree.instance()
 from labscript_utils import dedent
 
 
-class Counter:
-    """Returns a different integer each time ``get`` is called."""
+class Counter(object):
+    """A class with a single method that 
+    returns a different integer each time it's called."""
     def __init__(self):
         self.i = 0
     def get(self):
@@ -57,25 +57,35 @@ MODE_TRANSITION_TO_BUFFERED = 2
 MODE_TRANSITION_TO_MANUAL = 4
 MODE_BUFFERED = 8  
             
-class StateQueue:
-    # Do not drop the inmain decorators: the Qt lock stops Tab.mainloop taking any
-    # state until the tab is initialised, which makes the _initialise_worker state
-    # that create_worker queues first the first one mainloop sees.
+class StateQueue(object):
+    # NOTE:
+    #
+    # It is theoretically possible to remove the dependency on the Qt Mainloop (remove inmain decorators and fnuction calls)
+    # by introducing a local lock object instead. However, be aware that right now, the Qt inmain lock is preventing the 
+    # statemachine loop (Tab.mainloop) from getting any states uot of the queue until after the entire tab is initialised 
+    # and the Qt mainloop starts.
+    #
+    # This is particularly important because we exploit this behaviour to make sure that Tab._initialise_worker is placed at the
+    # start of the StateQueue, and so the Tab.mainloop method is guaranteed to get this initialisation method as the first state 
+    # regardless of whether the mainloop is started before the state is inserted (the state should always be inserted as part of  
+    # the call to Tab.create_worker, in DeviceTab.initialise_workers in DeviceTab.__init__ )
+    #
     
     def __init__(self,device_name):
-        self.logger = logging.getLogger(f'BLACS.{device_name}.state_queue')
+        self.logger = logging.getLogger('BLACS.%s.state_queue'%(device_name))
         self.logging_enabled = False
         if self.logging_enabled:
             self.logger.debug("started")
         
         self.list_of_states = []
         self._last_requested_state = None
-        # Blocks get() until a queued state matches the requested one.
+        # A queue that blocks the get(requested_state) method until an entry in the queue has a state that matches the requested_state
         self.get_blocking_queue = queue.Queue()
 
-    # Always run in the main thread, so get() and put() cannot race on this.
     @property
     @inmain_decorator(True)    
+    # This is always done in main so that we avoid a race condition between the get method and
+    # the put method accessing this property
     def last_requested_state(self):
         return self._last_requested_state
     
@@ -86,17 +96,20 @@ class StateQueue:
      
     def log_current_states(self):
         if self.logging_enabled:
-            self.logger.debug('Current items in the state queue: %s', self.list_of_states)
+            self.logger.debug('Current items in the state queue: %s'%str(self.list_of_states))
      
-    # Main thread only: the list is not thread safe.
+    # this should only happen in the main thread, as my implementation is not thread safe!
     @inmain_decorator(True)   
     def put(self, allowed_states, queue_state_indefinitely, delete_stale_states, data, priority=0):
-        """Queue a state; a lower priority number runs first."""
-        # Priority, then a unique increasing id, so sorting orders by priority and
-        # then by when the state was added.
+        """Add a state to the queue. Lower number for priority indicates the state will
+        be executed before any states with higher numbers for their priority"""
+        # State data starts with priority, and then with a unique id that monotonically
+        # increases. This way, sorting the queue will sort first by priority and then by
+        # order added.
         state_data = [priority, get_unique_id(), allowed_states, queue_state_indefinitely, delete_stale_states,data]
+        # Insert the task into the queue, retaining sort order first by priority and then by order added:
         insort(self.list_of_states, state_data)
-        # Wake get() if it is waiting for this state.
+        # if this state is one the get command is waiting for, notify it!
         if self.last_requested_state is not None and allowed_states&self.last_requested_state:
             self.get_blocking_queue.put('new item')
         
@@ -105,15 +118,18 @@ class StateQueue:
                 self.logger.debug('New state queued up. Allowed modes: %d, queue state indefinitely: %s, delete stale states: %s, function: %s', allowed_states, queue_state_indefinitely, delete_stale_states, data[0].__name__)
         self.log_current_states()
     
-    # Main thread only: the list is not thread safe.
+    # this should only happen in the main thread, as my implementation is not thread safe!
     @inmain_decorator(True)
     def check_for_next_item(self,state):
-        # Discard old wake-up messages: the traversal below sees every queued item,
-        # so get() should block only until a newer one is added.
+        # We reset the queue here, as we are about to traverse the tree, which contains any new items that
+        # are described in messages in this queue, so let's not keep those messages around anymore.
+        # Put another way, we want to block until a new item is added, if we don't find an item in this function
+        # So it's best if the queue is empty now!
         if self.logging_enabled:
             self.logger.debug('Re-initialsing self._get_blocking_queue')
         self.get_blocking_queue = queue.Queue()
 
+        # traverse the list
         delete_index_list = []
         success = False
         for i,item in enumerate(self.list_of_states):
@@ -121,13 +137,15 @@ class StateQueue:
             if self.logging_enabled:
                 self.logger.debug('iterating over states in queue')
             if allowed_states&state:
+                # We have found one! Remove it from the list
                 delete_index_list.append(i)
                 
                 if self.logging_enabled:
                     self.logger.debug('requested state found in queue')
                 
-                # Of consecutive entries for the same state function, use the last
-                # and delete the rest.
+                # If we are to delete stale states, see if the next state is the same statefunction.
+                # If it is, use that one, or whichever is the latest entry without encountering a different statefunction,
+                # and delete the rest
                 if delete_stale_states:
                     state_function = data[0]
                     i+=1
@@ -145,7 +163,7 @@ class StateQueue:
                     self.logger.debug('state should not be queued indefinitely')
                 delete_index_list.append(i)
         
-        # Delete from the end so earlier deletions do not shift later indices.
+        # do this in reverse order so that the first delete operation doesn't mess up the indices of subsequent ones
         for index in reversed(sorted(delete_index_list)):
             if self.logging_enabled:
                 self.logger.debug('deleting state')
@@ -155,46 +173,43 @@ class StateQueue:
             data = None
         return success,data    
         
+    # this method should not be called in the main thread, because it will block until something is found...
+    # Please, only have one thread ever accessing this...I have no idea how it will behave if multiple threads are trying to get
+    # items from the queue...
+    #
+    # This method will block until a item found in the queue is found to be allowed during the specified 'state'.
     def get(self,state):
-        """Block until an item allowed in ``state`` is queued, and return its data.
-
-        Call from one thread only, and not the main thread."""
         if self.last_requested_state:
             raise Exception('You have multiple threads trying to get from this queue at the same time. I won\'t allow it!')
     
         self.last_requested_state = state
         while True:
             if self.logging_enabled:
-                self.logger.debug('requesting next item in queue with mode %d', state)
+                self.logger.debug('requesting next item in queue with mode %d'%state)
                 inmain(self.log_current_states)
             status,data = self.check_for_next_item(state)
             if not status:
+                # we didn't find anything useful, so we'll wait until a useful state is added!
                 self.get_blocking_queue.get()
             else:
                 self.last_requested_state = None
                 return data
 
 
-# Unique ids number timeouts, and order queued states by when they were added.
+# A counter for uniqely numbering timeouts and numbering queued states monotinically,
+# such that sort order coresponds to the order the state was added to the queue:
 get_unique_id = Counter().get
 
 def define_state(allowed_modes,queue_state_indefinitely,delete_stale_states=False):
-    """Decorate a Tab method so that calling it queues it for the tab's state machine.
-
-    The method runs in the GUI thread when the tab's mode is in ``allowed_modes``
-    (MODE_* constants or-ed together). A generator method yields ``queue_work(...)``
-    to have a worker do work, and receives the result. Unless
-    ``queue_state_indefinitely``, a queued call is dropped, not kept, when the state
-    machine reaches it in another mode. With ``delete_stale_states``, of consecutive
-    queued calls of one method only the last runs."""
     def wrap(function):
         unescaped_name = function.__name__
         escapedname = '_' + function.__name__
         if allowed_modes < 1 or allowed_modes > 15:
-            raise RuntimeError(f'Function {unescaped_name} has been set to run in unknown states. Please make sure allowed states is one or more of MODE_MANUAL,'+
+            raise RuntimeError('Function %s has been set to run in unknown states. Please make sure allowed states is one or more of MODE_MANUAL,'%unescaped_name+
             'MODE_TRANSITION_TO_BUFFERED, MODE_TRANSITION_TO_MANUAL and MODE_BUFFERED (or-ed together using the | symbol, eg MODE_MANUAL|MODE_BUFFERED')
         def f(self,*args,**kwargs):
             function.__name__ = escapedname
+            #setattr(self,escapedname,function)
             self.event_queue.put(allowed_modes,queue_state_indefinitely,delete_stale_states,[function,[args,kwargs]])
         f.__name__ = unescaped_name
         f._allowed_modes = allowed_modes
@@ -202,7 +217,7 @@ def define_state(allowed_modes,queue_state_indefinitely,delete_stale_states=Fals
     return wrap
     
         
-class Tab:
+class Tab(object):
 
     ICON_OK = ':/qtutils/fugue/tick'
     ICON_BUSY = ':/qtutils/fugue/hourglass'
@@ -210,18 +225,22 @@ class Tab:
     ICON_FATAL_ERROR = ':/qtutils/fugue/exclamation-red'
 
     def __init__(self,notebook,settings,restart=False):  
+        # Store important parameters
         self.notebook = notebook
         self.settings = settings
         self._device_name = self.settings["device_name"]
         
-        self.logger = logging.getLogger(f'BLACS.{self.device_name}')
+        # Setup logging
+        self.logger = logging.getLogger('BLACS.%s'%(self.device_name))   
         self.logger.debug('Started')          
         
-        # Updates the tab label while the tab is not part of a notebook.
+        # Setup the timer for updating that tab text label when the tab is not 
+        # actively part of a notebook
         self._tab_icon_and_colour_timer = QTimer()
         self._tab_icon_and_colour_timer.timeout.connect(self.set_tab_icon_and_colour)
         self._tab_icon = self.ICON_OK
 
+        # Create instance variables
         self._not_responding_error_message = ''
         self._error = ''
         self._state = ''
@@ -240,8 +259,9 @@ class Tab:
         self.remote_process_client = self._get_remote_configuration()
         self.BLACS_connection = self.settings['connection_table'].find_by_name(self.device_name).BLACS_connection
 
+        # Load the UI
         self._ui = UiLoader().load(os.path.join(BLACS_DIR, 'tab_frame.ui'))
-        # Take the text colour from the palette, so OS theme changes are respected.
+        # set tab text color from palette to respect OS theme changes
         self._tab_text_colour = self._ui.palette().color(QPalette.ColorRole.Text)
         self._layout = self._ui.device_layout
         self._device_widget = self._ui.device_controls
@@ -251,18 +271,20 @@ class Tab:
         
         conn_str = self.BLACS_connection
         if self.remote_process_client is not None:
-            conn_str += f" via {self.remote_process_client.host}:{self.remote_process_client.port}"
+            conn_str += " via %s:%d" % (self.remote_process_client.host, self.remote_process_client.port)
         
         self._ui.device_name.setText(
-            f"<b>{self.device_name}</b> [conn: {conn_str}]"
+            "<b>%s</b> [conn: %s]" % (str(self.device_name), conn_str)
         )
         elide_label(self._ui.device_name, self._ui.horizontalLayout, Qt.ElideRight)
         elide_label(self._ui.state_label, self._ui.state_label_layout, Qt.ElideRight)
 
+        # Insert an OutputBox into the splitter, initially hidden:
         self._output_box = OutputBox(self._ui.splitter)
         self._ui.splitter.setCollapsible(self._ui.splitter.count() - 2, True)
         self._output_box.output_textedit.hide()
 
+        # connect signals
         self._ui.button_clear_smart_programming.clicked.connect(self.on_force_full_buffered_reprogram)
         self._ui.button_clear_smart_programming.setEnabled(False)
         self.force_full_buffered_reprogram = True
@@ -272,25 +294,31 @@ class Tab:
         self._update_error_and_tab_icon()
         self.supports_smart_programming(False)
         
+        # Restore settings:
         self.restore_builtin_save_data(self.settings.get('saved_data', {}))
 
-        # Before the mainloop starts, or self._mode may not exist yet, and after the
-        # UI is created, which the setters update.
+        # This should be done beofre the main_loop starts or else there is a race condition as to whether the 
+        # self._mode variable is even defined!
+        # However it must be done after the UI is created!
         self.mode = MODE_MANUAL
         self.state = 'idle'
         
+        # Setup the not responding timeout
         self._timeout = QTimer()
         self._timeout.timeout.connect(self.check_time)
         self._timeout.start(1000)
                 
+        # Launch the mainloop
         self._mainloop_thread = threading.Thread(target = self.mainloop)
         self._mainloop_thread.daemon = True
         self._mainloop_thread.start()
                 
+        # Add the tab to the notebook
         self.notebook.addTab(self._ui,self.device_name)
     
     def _get_remote_configuration(self):
-        """Return the zprocess RemoteProcessClient for a remote device, else None."""
+        # Create and return zprocess remote process client, if the device is configured
+        # as a remote device, else None:
         PRIMARY_BLACS = '__PrimaryBLACS'
         table = self.settings['connection_table']
         properties = table.find_by_name(self.device_name).properties
@@ -309,7 +337,7 @@ class Tab:
         return None
 
     def get_builtin_save_data(self):
-        """Settings BLACS saves for every tab, such as whether the terminal is
+        """Get builtin settings to be restored like whether the terminal is
         visible. Not to be overridden."""
         return {'_terminal_visible': self._ui.button_show_terminal.isChecked(),
                 '_splitter_sizes': self._ui.splitter.sizes()}
@@ -330,8 +358,8 @@ class Tab:
         return save_data
 
     def restore_builtin_save_data(self, data):
-        """Restore the settings from ``get_builtin_save_data``. Settings missing from
-        data are not changed. Not to be overridden."""
+        """Restore builtin settings to be restored like whether the terminal is
+        visible. Not to be overridden. Settings missing from data are not changed."""
         if '_terminal_visible' in data:
             self.set_terminal_visible(data['_terminal_visible'])
         if '_splitter_sizes' in data:
@@ -367,15 +395,19 @@ class Tab:
     @error_message.setter
     @inmain_decorator(True)
     def error_message(self,message):
+        #print message
+        #print self._error
         if message != self._error:
             self._error = message
             self._update_error_and_tab_icon()
     
     @inmain_decorator(True)
     def _update_error_and_tab_icon(self):
-        """Update the tab's error message, icon and text colour."""
+        """Udate and show the error message for the tab, and update the icon
+        and text colour on the tab"""
         prefix = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">\n<html><head><meta name="qrichtext" content="1" /><style type="text/css">\np, li { white-space: pre-wrap; }\n</style></head><body style=" font-family:"MS Shell Dlg 2"; font-size:7.8pt; font-weight:400; font-style:normal;">'
         suffix = '</body></html>'
+        #print threading.current_thread().name
         self._ui.error_message.setHtml(prefix+self._not_responding_error_message+self._error+suffix)
         if self._error or self._not_responding_error_message:
             self._ui.notresponding.show()
@@ -387,7 +419,7 @@ class Tab:
                     self._tab_icon = self.ICON_ERROR
         else:
             self._ui.notresponding.hide()
-            # Take the text colour from the palette, so OS theme changes are respected.
+            # set tab text color from palette to respect OS theme changes
             self._tab_text_colour = self._ui.palette().color(QPalette.ColorRole.Text)
             if self.state == 'idle':
                 self._tab_icon = self.ICON_OK
@@ -397,7 +429,8 @@ class Tab:
     
     @inmain_decorator(True)
     def set_tab_icon_and_colour(self):
-        """Apply self._tab_icon and self._tab_text_colour to the tab."""
+        """Set the tab icon and the colour of its text to the values of
+        self._tab_icon and self._tab_text_colour respectively"""
         if self._ui.parentWidget() is None:
             return
         self.notebook = self._ui.parentWidget().parentWidget()
@@ -417,10 +450,9 @@ class Tab:
     def device_name(self):
         return self._device_name
     
+    # sets the mode, switches between MANUAL, BUFFERED, TRANSITION_TO_BUFFERED and TRANSITION_TO_STATIC
     @property
     def mode(self):
-        """The tab's mode: MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED,
-        MODE_BUFFERED or MODE_TRANSITION_TO_MANUAL."""
         return self._mode
     
     @mode.setter
@@ -450,34 +482,37 @@ class Tab:
         elif self.mode == 8:
             mode = 'Buffered'
         else:
-            raise RuntimeError(f'self.mode for device {self.device_name} is invalid. It must be one of MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED, MODE_TRANSITION_TO_MANUAL or MODE_BUFFERED')
+            raise RuntimeError('self.mode for device %s is invalid. It must be one of MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED, MODE_TRANSITION_TO_MANUAL or MODE_BUFFERED'%(self.device_name))
     
-        self._ui.state_label.setText(f'<b>{mode} mode</b> - State: {self.state}')
+        self._ui.state_label.setText('<b>%s mode</b> - State: %s'%(mode,self.state))
+        
+        # Todo: Update icon in tab
     
     def create_worker(self,name,WorkerClass,workerargs=None):
-        """Set up a worker process called ``name``.
-
-        ``WorkerClass`` is a Worker subclass, or the fully qualified import path of
-        one. Use the path when the class's module has imports that the main process
-        must not run or cannot satisfy, as with a remote worker. ``workerargs``
-        become attributes of the worker, along with the device's connection table
-        properties, which they override; a name the Worker class already has is
-        skipped with a warning. The process starts once the state machine
-        mainloop runs, so startup errors are handled like any other."""
+        """Set up a worker process. WorkerClass can either be a subclass of Worker, or a
+        string containing a fully qualified import path to a worker. The latter is
+        useful if the worker class is in a separate file with global imports or other
+        import-time behaviour that is undesirable to have run in the main process, for
+        example if the imports may not be available to the main process (as may be the
+        case once remote worker processes are implemented and the worker may be on a
+        separate computer). The worker process will not be started immediately, it will
+        be started once the state machine mainloop begins running. This way errors in
+        startup will be handled using the normal state machine machinery."""
 
         if workerargs is None:
             workerargs = {}
-        # Connection table properties, unless workerargs already set them.
+        # Add all connection table properties, if they were not already specified in
+        # workerargs:
         conntable = self.settings['connection_table']
         for key, value in conntable.find_by_name(self.device_name).properties.items():
             workerargs.setdefault(key, value)
         workerargs['is_remote'] = self.remote_process_client is not None
 
         if name in self.workers:
-            raise Exception(f'There is already a worker process with name: {name}')
+            raise Exception('There is already a worker process with name: %s'%name) 
         if name == 'GUI':
-            # The status bar shows "(GUI)" for work done in the GUI, so no worker may
-            # have that name.
+            # This is here so that we can display "(GUI)" in the status bar and have the user confident this is actually happening in the GUI,
+            # not in a worker process named GUI
             raise Exception('You cannot call a worker process "GUI". Why would you want to? Your worker process cannot interact with the BLACS GUI directly, so you are just trying to confuse yourself!')
         
         if isinstance(WorkerClass, type):
@@ -488,7 +523,9 @@ class Tab:
                 startup_timeout=30
                 )
         elif isinstance(WorkerClass, str):
-            # An import path: zprocess.Process imports the class in the subprocess only.
+            # If we were passed a string for the WorkerClass, it is an import path
+            # for where the Worker class can be found. Pass it to zprocess.Process,
+            # which will do the import in the subprocess only.
             worker = Process(
                 process_tree,
                 output_redirection_port=self._output_box.port,
@@ -511,36 +548,43 @@ class Tab:
         QTimer.singleShot(delay,execute_timeout)
     
     def statemachine_timeout_add(self,delay,statefunction,*args,**kwargs):
-        """Queue ``statefunction(*args, **kwargs)`` now, and again ``delay`` ms after each run.
-
-        ``statefunction`` is a ``define_state`` method of this tab, queued only
-        while the tab is in one of its allowed modes. Adding the same function again
-        replaces its earlier timeout. Stop one with ``statemachine_timeout_remove``."""
+        # Add the timeout to our set of registered timeouts. Timeouts
+        # can thus be removed by the user at ay time by calling
+        # self.timeouts.remove(function)
         self._timeouts.add(statefunction)
-        # Runs the timeout once, then queues itself again after the delay.
+        # Here's a function which executes the timeout once, then queues
+        # itself up again after a delay:
         def execute_timeout():
-            # Only while still registered, and not replaced by a newer timeout for
-            # the same function.
+            # queue up the state function, but only if it hasn't been
+            # removed from self.timeouts:
             if statefunction in self._timeouts and self._timeout_ids[statefunction] == unique_id:
+                # Only queue up the state if we are in an allowed mode
                 if statefunction._allowed_modes&self.mode:
                     statefunction(*args, **kwargs)
+                # queue up another call to this function (execute_timeout)
+                # after the delay time:
                 self._timeout_add(delay,execute_timeout)
             
-        # A unique id tells this timeout from a later one added for the same function.
+        # Store a unique ID for this timeout so that we don't confuse 
+        # other timeouts for this one when checking to see that this
+        # timeout hasn't been removed:
         unique_id = get_unique_id()
         self._timeout_ids[statefunction] = unique_id
+        # queue the first run:
+        #QTimer.singleShot(delay,execute_timeout)    
         execute_timeout()
         
+    # Returns True if the timeout was removed
     def statemachine_timeout_remove(self,statefunction):
-        """Stop the timeout for ``statefunction``, and return True if there was one."""
         if statefunction in self._timeouts:
             self._timeouts.remove(statefunction)
             return True
         return False
     
+    # returns True if at least one timeout was removed, else returns False
     def statemachine_timeout_remove_all(self):
-        """Stop every timeout, and return True if there was at least one."""
-        # Do not simplify: the set must be tested before it is replaced.
+        # As a consistency check, we overwrite self._timeouts to an empty set always
+        # This must be done after the check to see if it is empty (if self._timeouts) so do not refactor this code!
         if self._timeouts:
             self._timeouts = set()
             return True
@@ -556,29 +600,33 @@ class Tab:
         self.shutdown_workers_complete = True
 
     def close_tab(self, finalise=True):
-        """Close the tab, terminate subprocesses and join the mainloop thread.
-
-        With ``finalise=False`` do neither, and the caller must call
-        ``finalise_close_tab()`` to do these potentially blocking operations."""
+        """Close the tab, terminate subprocesses and join the mainloop thread. If
+        finalise=False, then do not terminate subprocesses or join the mainloop. In this
+        case, callers must manually call finalise_close_tab() to perform these
+        potentially blocking operations"""
         self.logger.info('close_tab called')
         self._timeout.stop()
         for worker, to_worker, from_worker in self.workers.values():
-            # Free the mainloop if it is blocked starting a worker or talking to one.
+            # If the worker is still starting up, interrupt any blocking operations:
             worker.interrupt_startup()
+            # Interrupt the read and write queues in case the mainloop is blocking on
+            # sending or receiving from them:
             if to_worker is not None:
                 to_worker.interrupt()
                 from_worker.interrupt()
-        # Wake the mainloop if it is blocked on the event queue, and tell it to quit.
+        # In case the mainloop is blocking on the event queue, post a message to that
+        # queue telling it to quit:
         if self._mainloop_thread.is_alive():
             self.event_queue.put(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True,False,['_quit',None],priority=-1)
         self.notebook = self._ui.parentWidget().parentWidget()
         currentpage = None
         if self.notebook:
+            #currentpage = self.notebook.get_current_page()
             currentpage = self.notebook.indexOf(self._ui)
             self.notebook.removeTab(currentpage)
             temp_widget = QLabel("Waiting for tab mainloop and worker(s) to exit")
             temp_widget.setAlignment(Qt.AlignCenter)
-            self.notebook.insertTab(currentpage, temp_widget, f'[{self.device_name}]')
+            self.notebook.insertTab(currentpage, temp_widget, '[%s]' % self.device_name)
             self.notebook.tabBar().setTabIcon(currentpage, Icon(self.ICON_BUSY))
             self.notebook.tabBar().setTabTextColor(currentpage, QColor('grey'))
             self.notebook.setCurrentWidget(temp_widget)  
@@ -593,15 +641,16 @@ class Tab:
             self.logger.warning("mainloop thread of %s did not stop", self.device_name)
         kwargs = {'wait_timeout': TERMINATE_TIMEOUT}  # timeout passed to .wait()
         if self.remote_process_client is not None:
-            # An Interruptor cuts off talking to the remote process server at the
-            # timeout.
+            # Set up a zprocess.Interruptor to interrupt communication with the remote
+            # process server if the timeout is reached:
             interruptor = Interruptor()
             kwargs['get_interruptor'] = interruptor
             timer = inmain(QTimer)
             inmain(timer.singleShot, int(TERMINATE_TIMEOUT * 1000), interruptor.set)
         try:
-            # Pop each worker so its __del__ runs, which tells a remote process
-            # server that we are done with it.
+            # Delete the workers from the dict as we go, ensuring their __del__ method
+            # will be called. This is important so that the remote process server, if
+            # any, knows we have deleted the object:
             for name in self.workers.copy():
                 worker, _, _ = self.workers.pop(name)
                 worker.terminate(**kwargs)
@@ -611,6 +660,7 @@ class Tab:
             )
             return
         finally:
+             # Shutdown the output box by joining its thread:
             self._output_box.shutdown()
             if self.remote_process_client is not None:
                 inmain(timer.stop)
@@ -625,6 +675,7 @@ class Tab:
             self._restart_receiver.remove(function)
     
     def restart(self,*args):
+        # notify all connected receivers:
         for f in self._restart_receiver:
             try:
                 f(self.device_name)
@@ -637,13 +688,15 @@ class Tab:
         self._restart_thread = inthread(self.continue_restart, currentpage)
         
     def continue_restart(self, currentpage):
-        """Run the blocking stages of a restart in a thread, and the GUI stages in
-        the main thread."""
+        """Called in a thread for the stages of restarting that may be blocking, so as to
+        not block the main thread. Calls subsequent GUI operations in the main thread once
+        finished blocking."""
         self.finalise_close_tab(currentpage)
         inmain(self.clean_ui_on_restart)
         inmain(self.finalise_restart, currentpage)
         
     def clean_ui_on_restart(self):
+        # Clean up UI
         ui = self._ui
         self._ui = None
         ui.setParent(None)
@@ -656,22 +709,22 @@ class Tab:
         widget.deleteLater()
         del widget
     
-        # Breaks if a subclass's __init__ does not take these arguments.
+        # Note: the following function call will break if the user hasn't
+        # overridden the __init__ function to take these arguments. So
+        # make sure you do that!
         self.__init__(self.notebook, self.settings,restart=True)
         
-        # __init__ adds the tab at the end of the notebook; move it back to where it was.
+        # The init method is going to place this device tab at the end of the notebook specified
+        # Let's remove it from there, and place it the poition it used to be!
         self.notebook = self._ui.parentWidget().parentWidget()
         self.notebook.removeTab(self.notebook.indexOf(self._ui))
         self.notebook.insertTab(currentpage,self._ui,self.device_name)
         self.notebook.setCurrentWidget(self._ui)
             
-    def queue_work(self,worker_process,worker_function,*args,**kwargs):
-        """Describe a call of ``worker_function(*args, **kwargs)`` in a worker.
+        # If BLACS is waiting on this tab for something, tell it to abort!
+        # self.BLACS.current_queue.put('abort')
     
-        Yield this from a ``define_state`` method: the named worker runs the call
-        and its return value is sent back to the generator. If the call raises,
-        ``None`` is sent instead and the error is shown on the tab. The arguments
-        and the result must be picklable."""
+    def queue_work(self,worker_process,worker_function,*args,**kwargs):
         return worker_process,worker_function,args,kwargs
         
     def set_terminal_visible(self, visible):
@@ -682,7 +735,7 @@ class Tab:
         self._ui.button_show_terminal.setChecked(visible)
 
     def hide_error(self):
-        # Hide the error until the not-responding time has doubled.
+        # dont show the error again until the not responding time has doubled:
         self.hide_not_responding_error_until = 2*self.not_responding_for
         self._ui.notresponding.hide()  
         self.error_message = ''
@@ -698,128 +751,132 @@ class Tab:
         else:
             self.not_responding_for = time.time() - self._time_of_last_state_change
         if self.not_responding_for > 5 + self.hide_not_responding_error_until:
+            self.hide_not_responding_error_for = 0
             self._ui.notresponding.show()
             hours, remainder = divmod(int(self.not_responding_for), 3600)
             minutes, seconds = divmod(remainder, 60)
             if hours:
-                s = f'{hours} hours'
+                s = '%s hours'%hours
             elif minutes:
-                s = f'{minutes} minutes'
+                s = '%s minutes'%minutes
             else:
-                s = f'{seconds} seconds'
-            self._not_responding_error_message = f'The hardware process has not responded for {s}.<br /><br />'
+                s = '%s seconds'%seconds
+            self._not_responding_error_message = 'The hardware process has not responded for %s.<br /><br />'%s
             self._update_error_and_tab_icon()
         return True
         
     def mainloop(self):
-        logger = logging.getLogger(f"BLACS.{self.settings['device_name']}.mainloop")
+        logger = logging.getLogger('BLACS.%s.mainloop'%(self.settings['device_name']))   
         logger.debug('Starting')
         
-        # Keep these references, so a restarted tab's new queue and workers are never
-        # reached from this old loop.
+        # Store a reference to the state queue and workers, this way if the tab is restarted, we won't ever get access to the new state queue created then
         event_queue = self.event_queue
         workers = self.workers
         
         try:
             while True:
+                # Get the next task from the event queue:
                 logger.debug('Waiting for next event')
                 func, data = event_queue.get(self.mode)
                 if func == '_quit':
-                    # Posted by close_tab.
+                    # The user has requested a restart:
                     logger.debug('Received quit signal')
                     break
                 args,kwargs = data
-                logger.debug('Processing event %s', func.__name__)
-                self.state = f'{func.__name__} (GUI)'
-                # Run the state function in the Qt main thread.
+                logger.debug('Processing event %s' % func.__name__)
+                self.state = '%s (GUI)'%func.__name__
+                # Run the task with the GUI lock, catching any exceptions:
+                #func = getattr(self,funcname)
+                # run the function in the Qt main thread
                 generator = inmain(func,self,*args,**kwargs)
-                # Only a generator, which yields queue_work, talks to a worker.
+                # Do any work that was queued up:(we only talk to the worker if work has been queued up through the yield command)
                 if isinstance(generator, GeneratorType):
-                    # Send each yielded job to its worker, and the result back to the
-                    # generator, until it raises StopIteration.
-                    generator_running = True
+                    # We need to call next recursively, queue up work and send the results back until we get a StopIteration exception
                     try:
+                        # get the data from the first yield function
                         worker_process,worker_function,worker_args,worker_kwargs = inmain(generator.__next__)
                     except StopIteration:
-                        # It finished without yielding a job.
+                        # The generator returned before its first yield
                         generator_running = False
+                    else:
+                        generator_running = True
+                    # Continue until we get a StopIteration exception, or the user requests a restart
                     while generator_running:
                         try:
-                            logger.debug('Instructing worker %s to do job %s', worker_process, worker_function)
+                            logger.debug('Instructing worker %s to do job %s'%(worker_process,worker_function) )
                             if worker_function == 'init':
-                                # Start the process before its init() runs.
-                                self.state = f'Starting worker process ({worker_process})'
+                                # Start the worker process before running its init() method:
+                                self.state = '%s (%s)'%('Starting worker process', worker_process)
                                 worker, _, _ = self.workers[worker_process]
                                 to_worker, from_worker = worker.start(*worker_args)
                                 self.workers[worker_process] = (worker, to_worker, from_worker)
                                 worker_args = ()
-                                # Hold no reference to the worker indefinitely.
-                                del worker
+                                del worker # Do not gold a reference indefinitely
                             worker_arg_list = (worker_function,worker_args,worker_kwargs)
-                            # Catches unpicklable arguments before they are sent.
+                            # This line is to catch if you try to pass unpickleable objects.
                             try:
                                 pickle.dumps(worker_arg_list)
                             except Exception:
                                 self.error_message += 'Attempt to pass unserialisable object to child process:'
                                 raise
+                            # Send the command to the worker
                             to_worker = workers[worker_process][1]
                             from_worker = workers[worker_process][2]
                             to_worker.put(worker_arg_list)
-                            self.state = f'{worker_function} ({worker_process})'
+                            self.state = '%s (%s)'%(worker_function,worker_process)
+                            # Confirm that the worker got the message:
                             logger.debug('Waiting for worker to acknowledge job request')
                             success, message, results = from_worker.get()
                             if not success:
                                 logger.info('Worker reported failure to start job')
                                 raise Exception(message)
+                            # Wait for and get the results of the work:
                             logger.debug('Worker reported job started, waiting for completion')
                             success,message,results = from_worker.get()
                             if not success:
                                 logger.info('Worker reported exception during job')
                                 now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
-                                self.error_message += (f'Exception in worker - {now}:<br />'
-                                    f"<FONT COLOR='#ff0000'>{escape(message).replace(' ', '&nbsp;').replace('\n', '<br />')}</FONT><br />")
+                                self.error_message += ('Exception in worker - %s:<br />' % now +
+                                               '<FONT COLOR=\'#ff0000\'>%s</FONT><br />'%escape(message).replace(' ','&nbsp;').replace('\n','<br />'))
                             else:
                                 logger.debug('Job completed')
                             
-                            # We have heard from the worker, so stop hiding the
-                            # not-responding error.
+                            # Reset the hide_not_responding_error_until, since we have now heard from the child                        
                             self.hide_not_responding_error_until = 0
                                 
-                            logger.debug('returning worker results to function %s', func.__name__)
-                            self.state = f'{func.__name__} (GUI)'
+                            # Send the results back to the GUI function
+                            logger.debug('returning worker results to function %s' % func.__name__)
+                            self.state = '%s (GUI)'%func.__name__
                             next_yield = inmain(generator.send,results) 
+                            # If there is another yield command, put the data in the required variables for the next loop iteration
                             if next_yield:
                                 worker_process,worker_function,worker_args,worker_kwargs = next_yield
                         except StopIteration:
+                            # The generator has finished. Ignore the error, but stop the loop
                             logger.debug('Finalising function')
                             generator_running = False
                 self.state = 'idle'
         except Interrupted:
-            # A restart interrupted the queues.
+            # User requested a restart
             logger.debug('Interrupted by tab restart, quitting mainloop')
             return
         except Exception:
-            # Report the error, and leave the tab to be restarted.
+            # Some unhandled error happened. Inform the user, and give the option to restart
             message = traceback.format_exc()
-            logger.critical('A fatal exception happened:\n %s', message)
+            logger.critical('A fatal exception happened:\n %s'%message)
             now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
-            self.error_message += (f'Fatal exception in main process - {now}:<br /> '
-                f"<FONT COLOR='#ff0000'>{escape(message).replace(' ', '&nbsp;').replace('\n', '<br />')}</FONT><br />")
+            self.error_message += ('Fatal exception in main process - %s:<br /> '%now +
+                           '<FONT COLOR=\'#ff0000\'>%s</FONT><br />'%escape(message).replace(' ','&nbsp;').replace('\n','<br />'))
                             
             self.state = 'fatal error'
+            # do this in the main thread
             inmain(self._ui.button_close.setEnabled,False)
         logger.info('Exiting')
         
         
 class Worker(Process):
     def init(self):
-        """Override to set the worker up, in the worker process.
-
-        It is the first job the worker runs, after the connection table properties
-        and ``workerargs`` have become attributes, overriding a subclass's class
-        attributes; a name the Worker base class already has is skipped with a
-        warning. Import hardware modules here, not at the top of your file, so they
-        load only in the worker process, not in BLACS."""
+        # To be overridden by subclasses
         pass
     
     def run(self, worker_name, device_name, extraargs):
@@ -827,7 +884,7 @@ class Worker(Process):
         self.device_name = device_name
         from labscript_utils.setup_logging import setup_logging
         setup_logging('BLACS')
-        log_name = f'BLACS.{self.device_name}_{self.worker_name}.worker'
+        log_name = 'BLACS.%s_%s.worker'%(self.device_name,self.worker_name)
         self.logger = logging.getLogger(log_name)
         self.logger.debug('Starting')
         import labscript_utils.excepthook
@@ -841,17 +898,18 @@ class Worker(Process):
             # Only the base class's own names are protected: a subclass's class
             # attribute is a default the workerarg overrides.
             if hasattr(Worker, name) or name in vars(self):
-                msg = f"""attribute `{name}` overwrites an attribute of the Worker base class
+                msg = """attribute `{}` overwrites an attribute of the Worker base class
                     with the same name. This may cause unexpected behaviour. Consider
                     renaming it."""
-                warnings.warn(dedent(msg), RuntimeWarning)
+                warnings.warn(dedent(msg).format(name), RuntimeWarning)
             else:
                 setattr(self, name, value)
         self.mainloop()
 
     def _transition_to_buffered(self, device_name, h5_file, front_panel_values, fresh):
-        # h5_file arrives network-agnostic; subclasses' transition_to_buffered() are
-        # given a local path.
+        # The h5_file arg was converted to network-agnostic before being sent to us.
+        # Convert it to a local path before calling the subclass's
+        # transition_to_buffered() method
         h5_file = path_to_local(h5_file)
         return self.transition_to_buffered(
             device_name, h5_file, front_panel_values, fresh
@@ -859,10 +917,12 @@ class Worker(Process):
 
     def mainloop(self):
         while True:
+            # Get the next task to be done:
             self.logger.debug('Waiting for next job request')
             funcname, args, kwargs = self.from_parent.get()
             self.logger.debug('Got job request %s', funcname)
             try:
+                # See if we have a method with that name:
                 func = getattr(self,funcname)
                 success = True
                 message = ''
@@ -870,9 +930,10 @@ class Worker(Process):
                 success = False
                 message = traceback.format_exc()
                 self.logger.error("Couldn't start job:\n %s", message)
-            # Acknowledge the job, telling the parent whether the method exists.
+            # Report to the parent whether method lookup was successful or not:
             self.to_parent.put((success,message,None))
             if success:
+                # Try to do the requested work:
                 self.logger.debug('Starting job %s', funcname)
                 try:
                     results = func(*args,**kwargs)
@@ -886,42 +947,47 @@ class Worker(Process):
                     del traceback_lines[1]
                     message = ''.join(traceback_lines)
                     self.logger.error('Exception in job:\n%s', message)
-                # The results must be picklable to go back to the parent.
+                # Check if results object is serialisable:
                 try:
                     pickle.dumps(results)
                 except Exception:
                     message = traceback.format_exc()
                     self.logger.error('Job returned unserialisable datatypes, cannot pass them back to parent.\n%s', message)
-                    message = f'Attempt to pass unserialisable object {results!s} to parent process:\n' + message
+                    message = 'Attempt to pass unserialisable object %s to parent process:\n' % str(results) + message
                     success = False
                     results = None
-                # Final reply: whether the work succeeded, and its results.
+                # Report to the parent whether work was successful or not,
+                # and what the results were:
                 self.to_parent.put((success,message,results))
 
 
-class PluginTab:
+class PluginTab(object):
     def __init__(self, notebook, settings):
+        # Store important parameters
         self.notebook = notebook
         self.settings = settings
         self._tab_name = self.settings["tab_name"]
 
+        # Load the UI
         self._ui = UiLoader().load(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plugin_tab_frame.ui'))
         self._layout = self._ui.device_layout
-        # Read by set_tab_icon_and_colour and on a theme change, as a device tab's are.
         self._tab_icon = ''
         self._tab_text_colour = self._ui.palette().color(QPalette.ColorRole.Text)
 
-        self._ui.device_name.setText(f"<b>{self.tab_name}</b> [Plugin]")
+        self._ui.device_name.setText("<b>%s</b> [Plugin]" % (str(self.tab_name)))
         elide_label(self._ui.device_name, self._ui.horizontalLayout, Qt.ElideRight)
 
+        # Add the tab to the notebook
         self.notebook.addTab(self._ui, self.tab_name)
 
+        # Call the initialise GUI function
         self.initialise_GUI()
         self.restore_save_data(self.settings['saved_data'] if 'saved_data' in self.settings else {})
 
     @inmain_decorator(True)
     def set_tab_icon_and_colour(self):
-        """Apply self._tab_icon and self._tab_text_colour to the tab."""
+        """Set the tab icon and the colour of its text to the values of
+        self._tab_icon and self._tab_text_colour respectively"""
         if self._ui.parentWidget() is None:
             return
         self.notebook = self._ui.parentWidget().parentWidget()
@@ -945,6 +1011,7 @@ class PluginTab:
         self.notebook = self._ui.parentWidget().parentWidget()
         currentpage = None
         if self.notebook:
+            #currentpage = self.notebook.get_current_page()
             currentpage = self.notebook.indexOf(self._ui)
             self.notebook.removeTab(currentpage)
             temp_widget = QWidget()
@@ -955,9 +1022,10 @@ class PluginTab:
     def initialise_GUI(self):
         return
 
+    # This method should be overridden in your plugin class if you want to save any data
+    # This method should return a dictionary, and this dictionary will be passed to the restore_save_data()
+    # method when the tab is initialised
     def get_save_data(self):
-        """Override to return a dict of data to save, which is passed to
-        ``restore_save_data`` when the tab is initialised."""
         return {}
         
     def get_device_save_data(self):
@@ -970,11 +1038,13 @@ class PluginTab:
         return save_data
 
 
+    # This method should be overridden in your plugin class if you want to restore data
+    # (saved by get_save_data()) when the tab is initialised.
+    # You will be passed a dictionary of the form specified by your get_save_data() method
+    #
+    # Note: You must handle the case where the data dictionary is empty (or one or more keys are missing)
+    #       This case will occur the first time BLACS is started on a PC, or if the BLACS datastore is destroyed
     def restore_save_data(self,data):
-        """Override to restore the dict that ``get_save_data`` returned.
-
-        It may be empty or lack keys, as when BLACS first starts on a PC or its
-        datastore has been destroyed, so handle that."""
         return
 
     def update_from_settings(self,settings):
@@ -983,13 +1053,13 @@ class PluginTab:
     def get_builtin_save_data(self):
         return {}
 
-# Example subclasses of Tab and Worker: the tab has its worker do work in response
-# to GUI events.
+# Example code! Two classes are defined below, which are subclasses
+# of the ones defined above.  They show how to make a Tab class,
+# and a Worker class, and get the Tab to request work to be done by
+# the worker in response to GUI events.
 class MyTab(Tab):
-    # restart is true when __init__ is called by a restart.
-    def __init__(self,notebook,settings,restart=False):
-        # Call the base __init__ first.
-        super().__init__(notebook,settings,restart)
+    def __init__(self,notebook,settings,restart=False): # restart will be true if __init__ was called due to a restart
+        Tab.__init__(self,notebook,settings,restart) # Make sure to call this first in your __init__!
         self.create_worker('My worker',MyWorker,{'x':7})
         self.initUI()
         
@@ -1007,6 +1077,7 @@ class MyTab(Tab):
         self.checkbutton = QPushButton('have baz\nreturn a Queue')
         self.checkbutton.setCheckable(True)
         
+        #self.device_widget.addWidget(layout)
         self.layout.addWidget(foobutton)
         self.layout.addWidget(barbutton)
         self.layout.addWidget(bazbutton)
@@ -1024,25 +1095,42 @@ class MyTab(Tab):
         removebazbutton.clicked.connect(self.remove_baz_timeout)
         bazunpickleable.clicked.connect(self.baz_unpickleable)
 
-    # Decorate callbacks with @define_state, so the state machine runs them in turn,
-    # not at once. Skip it only for callbacks safe in any state, such as plot axes or
-    # appearance, and never call queue_work from an undecorated callback.
+    # It is critical that you decorate your callbacks with @define_state
+    # as below. This makes the function get queued up and executed
+    # in turn by our state machine instead of immediately by the
+    # GTK mainloop. Only don't decorate if you're certain that your
+    # callback can safely happen no matter what state the system is
+    # in (for example, adjusting the axis range of a plot, or other
+    # appearance settings). You should never be calling queue_work
+    # or do_after from un undecorated callback.
     @define_state(MODE_MANUAL,True)  
     def foo(self,button=None):
         self.logger.debug('entered foo')
-        # Yielding queue_work has the worker run MyWorker.foo(5,6,7,x='x'). No other
-        # event is processed until it finishes, and its return value comes back here.
+        #self.toplevel.set_sensitive(False)
+        # Here's how you instruct the worker process to do
+        # something. When this callback returns, the worker will be
+        # requested to do whatever you ask in queue_work (in this
+        # case, MyWorker.foo(5,6,7,x='x') ). Then, no events will
+        # be processed until that work is done. Once the work is
+        # done, whatever has been set with do_after will be executed
+        # (in this case self.leave_foo(1,2,3,bar=baz) ).
         results = yield(self.queue_work('My worker','foo', 5,6,7,x='x'))
 
+        #self.toplevel.set_sensitive(True)
         self.logger.debug('leaving foo')
     
-    # What not to do: this queues work without @define_state. Nothing happens at the
-    # click, and the error appears only when some later decorated callback runs.
+    # Here's what's NOT to do: forgetting to decorate a callback with @define_state
+    # when it's not something that can safely be done asynchronously
+    # to the state machine:
     def fatal(self):
+        # This bug could be hard to track because nothing will happen
+        # when you click the button -- only once you do some other,
+        # correcly decorated callback will it become apparant that
+        # something is wrong. So don't make this mistake!
         self.queue_work('My worker','foo', 5,6,7,x='x')
         
     @define_state(MODE_MANUAL,True)  
-    def bar(self,button):
+    def bar(self, button=None):
         self.logger.debug('entered bar')
         results = yield(self.queue_work('My worker','bar', 5,6,7,x=5))
       
@@ -1060,36 +1148,51 @@ class MyTab(Tab):
         print(threading.current_thread().name)
         self.logger.debug('leaving baz')
         
-    # Shows what happens when an unpicklable object is sent to the worker.
+    # This event shows what happens if you try to send a unpickleable
+    # event through a queue to the subprocess:
     @define_state(MODE_MANUAL,True)  
-    def baz_unpickleable(self, button):
+    def baz_unpickleable(self, button=None):
         self.logger.debug('entered baz_unpickleable')
         results = yield(self.queue_work('My worker','baz', 5,6,7,x=threading.Lock()))
         self.logger.debug('leaving baz_unpickleable')
     
-    # Adding and removing a timeout is safe in any state, so neither needs
-    # @define_state.
+    # You don't need to decorate with @define_state if all you're
+    # doing is adding a timeout -- adding a timeout can safely be done
+    # asynchronously. But you can still decorate if you want, and you
+    # should if you're doing other work in the same function call which
+    # can't be done asynchronously.
     def add_baz_timeout(self):
         self.statemachine_timeout_add(2000,self.baz)
     
+    # Similarly, no @define_state is required here -- same applies as above.    
     def remove_baz_timeout(self):
         self.statemachine_timeout_remove(self.baz)
     
         
 class MyWorker(Worker):
     def init(self):
-        # init, not __init__, is the first call in the new process. Import hardware
-        # modules here, not at the top of the file, so they load only in the worker
-        # process, not in BLACS; `global` makes them visible to the other methods.
+        # You read correctly, this isn't __init__, it's init. It's the
+        # first thing that will be called in the new process. You should
+        # do imports here, define instance variables, that sort of thing. You
+        # shouldn't import the hardware modules at the top of your file,
+        # because then they will be imported in both the parent and
+        # the child processes and wont be cleanly restarted when the subprocess
+        # is restarted. Since we're inside a method call though, you'll
+        # have to use global statements for the module imports, as shown
+        # below. Either that or you can make them instance variables, ie:
+        # import module; self.module = module. Up to you, I prefer
+        # the former.
         global serial; import serial
         self.logger.info('got x! %d', self.x)
-        # Fail now and then, to exercise error handling on init.
+        # randomly fail this on init, but only occasionally
         import random
         if random.random() < 0.15:
             raise Exception('bad import!')
         
-    # Called when the tab asks for it with queue_work; its return value goes back to
-    # the tab's generator.
+    # Here's a function that will be called when requested by the parent
+    # process. There's nothing special about it really. Its return
+    # value will be passed as a keyword argument _results to the
+    # function which was queued with do_after, if there was one.
     def foo(self,*args,**kwargs):
         self.logger.debug('working on foo!')
         time.sleep(10)
@@ -1106,10 +1209,12 @@ class MyWorker(Worker):
         time.sleep(0.5)
         if kwargs['return_queue']:
             return queue.Queue()
-        return f'results{zzz}!!!'
+        return 'results%d!!!'%zzz
 
 if __name__ == '__main__':
+    import sys
     import logging.handlers
+    # Setup logging:
     from labscript_utils.setup_logging import setup_logging
     setup_logging('BLACS')
     logger = logging.getLogger('BLACS')
@@ -1136,11 +1241,11 @@ if __name__ == '__main__':
     notebook = DragDropTabWidget()
     layout.addWidget(notebook)
     
-    class FakeConnection:
+    class FakeConnection(object):
         def __init__(self):
             self.BLACS_connection = 'None'
             self.properties = {}
-    class FakeConnectionTable:
+    class FakeConnectionTable(object):
         def __init__(self):
             pass
         
