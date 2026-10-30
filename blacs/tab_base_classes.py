@@ -73,7 +73,7 @@ class StateQueue(object):
 
     def log_current_states(self):
         if self.logging_enabled:
-            self.logger.debug('Current items in the state queue: %s'%str(self.list_of_states))
+            self.logger.debug('Current items in the state queue: %s', self.list_of_states)
 
     @inmain_decorator(True)
     def put(self, allowed_states, queue_state_indefinitely, delete_stale_states, data, priority=0):
@@ -179,7 +179,7 @@ class StateMachine(object):
         func, (args, kwargs) = data
         self._state_name = func.__name__
         self._job = None
-        self.logger.debug('Processing event %s' % self._state_name)
+        self.logger.debug('Processing event %s', self._state_name)
         self.tab.state = '%s (GUI)' % self._state_name
         try:
             generator = func(self.tab, *args, **kwargs)
@@ -209,7 +209,7 @@ class StateMachine(object):
         except Exception:
             self._fatal_error(traceback.format_exc())
             return
-        self.logger.debug('Instructing worker %s to do job %s' % (worker_name, worker_function))
+        self.logger.debug('Instructing worker %s to do job %s', worker_name, worker_function)
         if worker_function == 'init':
             self.tab.state = 'Starting worker process (%s)' % worker_name
         else:
@@ -282,7 +282,7 @@ class StateMachine(object):
                            '<FONT COLOR=\'#ff0000\'>%s</FONT><br />'%escape(message).replace(' ','&nbsp;').replace('\n','<br />'))
         # Reset the hide_not_responding_error_until, since we have now heard from the child
         tab.hide_not_responding_error_until = 0
-        self.logger.debug('returning worker results to function %s' % self._state_name)
+        self.logger.debug('returning worker results to function %s', self._state_name)
         tab.state = '%s (GUI)' % self._state_name
         self._advance(self._generator.send, results)
 
@@ -292,7 +292,7 @@ class StateMachine(object):
             return
         self.failed = True
         self._generator = None
-        self.logger.critical('A fatal exception happened:\n %s'%message)
+        self.logger.critical('A fatal exception happened:\n %s', message)
         tab = self.tab
         now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
         tab.error_message += ('Fatal exception in main process - %s:<br /> '%now +
