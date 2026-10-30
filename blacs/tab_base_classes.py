@@ -321,7 +321,8 @@ class StateMachine(object):
             return
         self.closed = True
         self._generator = None
-        for worker, to_worker, from_worker in self.workers.values():
+        # A copy, as _end_workers pops the workers from another thread:
+        for worker, to_worker, from_worker in list(self.workers.values()):
             # If the worker is still starting up, interrupt any blocking operations:
             worker.interrupt_startup()
             # Interrupt the read and write queues in case the job thread is blocking on
