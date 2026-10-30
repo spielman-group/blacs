@@ -147,7 +147,7 @@ take a long time to run and can be queued rapidly, for instance when a user chan
 output values of a device that is slow to program.
 
 Calls are added to the queue in response to user actions (for example clicking one of
-the manual control buttons), by the queue manager when it runs a shot (see
+the manual control buttons), by the shot loop when it runs a shot (see
 :doc:`shot-management`), and by timers (for example for regular status checks of the
 hardware, with `statemachine_timeout_add`).
 
@@ -232,13 +232,13 @@ programming fails:
             self.mode = MODE_MANUAL
             self.program_device()
 
-When the queue manager calls `transition_to_buffered`, the call stays in the queue until
+When the shot loop calls `transition_to_buffered`, the call stays in the queue until
 the tab is in `MODE_MANUAL`. The state function then sets the mode to
 `MODE_TRANSITION_TO_BUFFERED`, and yields a call of the worker method
 `transition_to_buffered`, which typically programs the device with the hardware
 instructions from the shot file. If the worker method succeeds, the state function sets
-the mode to `MODE_BUFFERED` and notifies the queue manager. If it fails, the state function
-notifies the queue manager and queues a call of `abort_transition_to_buffered`. The
+the mode to `MODE_BUFFERED` and notifies the shot loop. If it fails, the state function
+notifies the shot loop and queues a call of `abort_transition_to_buffered`. The
 class :class:`blacs.device_base_class.DeviceTab` implements these state functions for every
 device, in a similar way, for any number of worker processes. Further information on
 adding support for new devices is in :doc:`labscript-devices:adding_devices`.
