@@ -33,8 +33,10 @@ d67dbe4 (adapted: the shot is reported `aborted`, which runmanager handles as
 any abort), 074dcda, 7a8f018, 5a226bb with 763bff2, e8d59dc, c3e319e (Ctrl-C
 closes the window), 177f213, 8ff163e, the loop-wide handler of 80a3f0d,
 0636b34, 7719dee with d2e7675, 7918c4d, 23376cd (with every logging call of the
-fork's) and 79d460e's classifiers. The floors are Python 3.13, qtutils 4.4.1
-and zprocess 3.0.1.
+fork's), 79d460e's classifiers, f1021d3, b981580 with 440bae1, fd2f9e8,
+36bfd6a, 0a29fff, 860de5b, ccec819, f119eb7 and 1cf03c4 (the Request shots,
+Abort and browse buttons drawn as upstream's queue buttons are). The floors are
+Python 3.13, qtutils 4.4.3 and zprocess 3.0.1.
 
 The tab state machine on the main thread (bfaaf25, 4c0f058, f89cc2b), with
 workers ended by a quit message and the Stop button (69a2dd3, d00b690), is
@@ -55,6 +57,9 @@ Not ported:
   (Ian), not Qt's saved geometry: 6165951, 850e3cb.
 - ce9a10a's `open_file` is reached through `open_in_editor`, shared by the
   applications (Ian).
+- e272b65's Idle status after a completed shot: the shot loop sets it already.
+- bbe883d's comments are on plugin discovery, which `labscript_utils.plugins`
+  holds here.
 
 ## Compatibility
 
@@ -75,5 +80,6 @@ keeps its globals list. It is offered upstream with the TOML globals.
   upstream's.
 - Style: `os.path`, and Qt enum spelling (with the redundant PySide branches in
   the connection table's sort-order helpers).
+- The docs' screenshots are upstream's, and the overview shows upstream's queue.
 - Tests are more than rule 13's tenth of the code. The tenth is not reached
   without cutting the integration fixture, which is what makes the rest real.

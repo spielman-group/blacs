@@ -157,7 +157,7 @@ thread (463-475); `abort_buffered`, `start_run` and `transition_to_manual` (481,
 | `blacs/tab_frame.ui` | `button_stop` | d00b690 | +14 |
 | `blacs/__main__.py` | `finalise_quit` stopped states | d00b690 | +2 −2 |
 | `blacs/shot_execution.py` | "restarted or stopped" (741, 821, 935-939) | d00b690, fork | +9 −4 |
-| `docs/source/device-tabs.rst` | 234-240: main thread and job thread | fork | 5 |
+| `docs/source/device-tabs.rst` | the state machine section is 36bfd6a's, with the shot loop for its queue manager | 36bfd6a, fork | +4 −4 |
 | `docs/source/shot-management.rst` | a device restarted or stopped after the run | fork | +3 −2 |
 | `tests/` | see Tests | fork | +178 −13 |
 | `DEEP_PASS.md` | 39-44: the entry moves to what CodeHealth carries | fork | +9 −4 |
@@ -211,6 +211,8 @@ each:
 | beba127 | F4 | the workerarg rule in `create_worker`'s docstring | 30 passed, 8 subtests |
 | bd1350d | fork | Tests: the hardware log, one release each, cases for F3, F13 and F15 | 30 passed, 11 subtests |
 | bfed26e | fork | `shot-management.rst`, `DEEP_PASS.md` | docs only |
+| aefe93d | 36bfd6a | upstream's state machine section of `device-tabs.rst`, in place of 6f2d38a's | docs only |
+| 6294de0 | fork | `device-tabs.rst`: the shot loop for upstream's queue manager | docs only |
 
 Against upstream/master: `blacs/tab_base_classes.py` differs by F2 to F4, F7 and F9 to
 F15 only (+126 −45); `blacs/tab_frame.ui` is identical; `blacs/__main__.py` keeps
