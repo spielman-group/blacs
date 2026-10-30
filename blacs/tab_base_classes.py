@@ -10,7 +10,7 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-from zprocess import Process, Interruptor, Interrupted, interrupt_main_thread
+from zprocess import Process, Interruptor, Interrupted, ProcessExited, interrupt_main_thread
 import time
 import sys
 import signal
@@ -851,7 +851,7 @@ class Tab(object):
                 try:
                     # The queue's own interruptor is set when the state machine closes:
                     to_worker.put('quit', timeout=1, interruptor=Interruptor())
-                except TimeoutError:
+                except (TimeoutError, ProcessExited):
                     pass
                 else:
                     children.append(worker.child)
