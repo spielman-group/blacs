@@ -780,13 +780,6 @@ class Tab(object):
             self._timeouts = set()
             return False        
     
-    @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)
-    def shutdown_workers(self):
-        """Ask all workers to shutdown"""
-        for worker_name in self.workers:
-            yield(self.queue_work(worker_name, 'shutdown'))
-        self.shutdown_workers_complete = True
-
     def close_tab(self, finalise=True):
         """Close the tab, terminate subprocesses and join the job thread. If
         finalise=False, then do not terminate subprocesses or join the job thread. In this
