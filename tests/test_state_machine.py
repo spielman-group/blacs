@@ -80,18 +80,35 @@ class MainloopTests(unittest.TestCase):
 
 
 class CleanupWorker(Worker):
+    def init(self):
+        self.allocate()
+
+    def allocate(self):
+        self.record('a')
+
     def sleep(self):
         (Path(self.directory) / 'started').touch()
         time.sleep(60)
 
     def shutdown(self):
-        # Stands in for releasing hardware, such as clearing NI-DAQmx tasks.
-        (Path(self.directory) / 'released').touch()
+        self.record('r')
+
+    def record(self, event):
+        # Stands in for hardware, such as NI-DAQmx tasks: a log of each allocation and
+        # each release.
+        with open(Path(self.directory) / 'hardware', 'a') as log:
+            log.write(event)
+
+
+class RaisingWorker(CleanupWorker):
+    def shutdown(self):
+        super().shutdown()
+        raise RuntimeError('An error after the release')
 
 
 class HangingWorker(CleanupWorker):
     def shutdown(self):
-        (Path(self.directory) / 'started').touch()
+        self.record('h')
         threading.Event().wait()
 
 
@@ -99,6 +116,10 @@ class CleanupTab(Tab):
     def __init__(self, notebook, settings, restart=False):
         super().__init__(notebook, settings, restart)
         self.create_worker('main', settings['worker'], {'directory': settings['directory']})
+
+    @define_state(MODE_MANUAL, True)
+    def allocate(self):
+        yield self.queue_work('main', 'allocate')
 
     @define_state(MODE_MANUAL, True)
     def sleep(self):
@@ -110,7 +131,11 @@ class CleanupTab(Tab):
 
 
 def quit_blacs(tab):
-    # What BLACS's quit does once the workers' shutdown state has run or timed out.
+    # What BLACS's quit does, closing the tab at the next of its 100 ms polls.
+    tab.shutdown_workers()
+    wait_until(lambda: tab.shutdown_workers_complete)
+    poll = time.monotonic() + 0.1
+    wait_until(lambda: time.monotonic() > poll)
     inthread(tab.finalise_close_tab, tab.close_tab(finalise=False))
 
 
@@ -118,9 +143,13 @@ ENDS = {
     'restart': lambda tab: tab.restart(),
     'stop': lambda tab: tab._ui.button_stop.click(),
     'quit': quit_blacs,
+    'quit with a state queued': lambda tab: (tab.allocate(), quit_blacs(tab)),
+    'quit during a restart': lambda tab: (tab.restart(), quit_blacs(tab)),
     'fatal error': lambda tab: tab.fail(),
+    'raising shutdown': quit_blacs,
     'hanging shutdown': quit_blacs,
 }
+WORKERS = {'raising shutdown': RaisingWorker, 'hanging shutdown': HangingWorker}
 
 # Starts a worker, idle or in a sleeping job, so that the test can kill its parent:
 PARENT = '''
@@ -142,7 +171,7 @@ class WorkerCleanupTests(unittest.TestCase):
     def make_directory(self):
         return Path(self.enterContext(tempfile.TemporaryDirectory()))
 
-    def test_however_a_worker_is_ended_its_shutdown_releases_the_hardware(self):
+    def test_however_a_worker_is_ended_its_shutdown_releases_the_hardware_once(self):
         notebook = DragDropTabWidget()
         # A fatal error cannot happen while a job runs, nor a hanging
         # shutdown() in a job be cut off.
@@ -150,33 +179,38 @@ class WorkerCleanupTests(unittest.TestCase):
                  if not busy or end in ('restart', 'stop', 'quit')]
         tabs = {}
         for end, busy in cases:
-            worker = HangingWorker if end == 'hanging shutdown' else CleanupWorker
             settings = {'device_name': f'{end} {busy}', 'connection_table': ConnectionTable(),
-                        'worker': worker, 'directory': self.make_directory()}
+                        'worker': WORKERS.get(end, CleanupWorker),
+                        'directory': self.make_directory()}
             tabs[end, busy] = CleanupTab(notebook, settings)
-        wait_until(lambda: all(tab.workers['main'][1] and tab.state == 'idle' for tab in tabs.values()))
+        def ready(tab):
+            return tab.workers['main'][1] and tab.state == 'idle'
+        wait_until(lambda: all(ready(tab) for tab in tabs.values()))
         for (end, busy), tab in tabs.items():
             if busy:
                 tab.sleep()
                 wait_until(lambda: (tab.settings['directory'] / 'started').exists())
-        children = {}
+        children = [tab.workers['main'][0].child for tab in tabs.values()]
         for (end, busy), tab in tabs.items():
-            children[end, busy] = tab.workers['main'][0].child
             ENDS[end](tab)
-        wait_until(lambda: all(child.poll() is not None for child in children.values()))
-        for (end, busy), child in children.items():
-            directory = tabs[end, busy].settings['directory']
-            with self.subTest(end=end, busy=busy):
-                # Exited by itself, before the tab would have killed it:
-                self.assertEqual(child.returncode, 0)
-                if end == 'hanging shutdown':
-                    self.assertTrue((directory / 'started').exists())
-                    self.assertFalse((directory / 'released').exists())
-                else:
-                    self.assertTrue((directory / 'released').exists())
+        wait_until(lambda: all(child.poll() is not None for child in children))
         for (end, busy), tab in tabs.items():
-            if end in ('restart', 'stop', 'fatal error'):
+            if 'restart' in end:
+                wait_until(lambda: not tab._restart_thread.is_alive())
+            if tab.workers:
+                # Rebuilt by its restart: ended in turn once it is up.
+                wait_until(lambda: ready(tab))
+                children.append(tab.workers['main'][0].child)
+            if end in ('restart', 'stop', 'fatal error') or tab.workers:
                 tab.close_tab()
+        wait_until(lambda: all(child.poll() is not None for child in children))
+        # Each exited by itself, before its tab would have killed it:
+        self.assertEqual([child.returncode for child in children], [0] * len(children))
+        for (end, busy), tab in tabs.items():
+            with self.subTest(end=end, busy=busy):
+                expected = {'restart': 'arar', 'hanging shutdown': 'ah'}.get(end, 'ar')
+                hardware = (tab.settings['directory'] / 'hardware').read_text()
+                self.assertEqual(hardware, expected)
 
     def test_a_worker_whose_parent_is_lost_releases_the_hardware(self):
         directories = []
@@ -194,7 +228,7 @@ class WorkerCleanupTests(unittest.TestCase):
             parent.wait()
             directories.append(directory)
         # Unanswered heartbeats take about 10 s to count as a lost parent.
-        wait_until(lambda: all((d / 'released').exists() for d in directories), timeout=60)
+        wait_until(lambda: all((d / 'hardware').read_text() == 'ar' for d in directories), timeout=60)
 
 
 if __name__ == '__main__':
