@@ -39,7 +39,7 @@ and zprocess 3.0.1.
 The tab state machine on the main thread (bfaaf25, 4c0f058, f89cc2b), with
 workers ended by a quit message and the Stop button (69a2dd3, d00b690), is
 upstream's: `tab_base_classes.py` differs from upstream's only by the fork's
-changes in `DESIGN_TAB_STATE_MACHINE.md` (F2 to F4, F7, F9 to F12). A worker's
+changes in `DESIGN_TAB_STATE_MACHINE.md` (F2 to F4, F7, F9 to F15). A worker's
 cleanup on a lost parent needs zprocess's `on_parent_death` hook (zprocess
 33b3618).
 

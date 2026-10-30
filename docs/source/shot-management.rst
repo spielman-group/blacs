@@ -387,8 +387,9 @@ Shot execution follows this pattern:
     if one of them fails. If anything fails here, BLACS returns the shot file
     to its pre-run state so the shot can be run again, unchecks **Request
     shots**, and holds a ``failed`` outcome for the next exchange. A device
-    reporting an error after the run and a failure saving the data are
-    distinguished in the reason, because they need different attention.
+    reporting an error after the run, a device restarted or stopped, and a
+    failure saving the data are distinguished in the reason, because they need
+    different attention.
 #.  The outcome — ``completed`` or otherwise — is held until the next exchange,
     and is only let go of once runmanager has taken it, so a momentary outage
     cannot lose one. Runmanager, not BLACS, submits completed shots to lyse.
