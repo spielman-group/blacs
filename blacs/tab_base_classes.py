@@ -58,8 +58,8 @@ MODE_TRANSITION_TO_BUFFERED = 2
 MODE_TRANSITION_TO_MANUAL = 4
 MODE_BUFFERED = 8  
 
-# Duration in seconds for which a worker that has been told to quit waits for its
-# interrupted job to stop:
+# Duration in seconds for which a worker that has been told to quit waits for its job,
+# interrupted unless it is shutdown(), to stop:
 WORKER_ABORT_TIMEOUT = 5
 # Duration in seconds for which a worker that has been told to quit then waits for its
 # shutdown() method to return:
@@ -1102,14 +1102,14 @@ class Worker(Process):
         # Set while no job is running:
         self._idle = threading.Event()
         self._idle.set()
-        # Set while the main thread is running a job. _on_sigint() raises
-        # KeyboardInterrupt only while this is set, so that the interrupt is raised in
-        # the job and not in the code that runs after it:
+        # Set while the main thread is running a job other than shutdown(). _on_sigint()
+        # raises KeyboardInterrupt only while this is set, so that the interrupt is
+        # raised in the job and not in the code that runs after it:
         self._job_running = False
         # Held once the worker has started to quit:
         self._quitting = threading.Lock()
-        # Whether a shutdown job has returned, so that the quit need not call it again:
-        self._shutdown_returned = False
+        # Whether shutdown() has been called, so that the quit does not call it again:
+        self._shutdown_called = False
         signal.signal(signal.SIGINT, self._on_sigint)
         # Heartbeat failure quits as a quit message does, and ends the process
         # PARENT_DEATH_TIMEOUT seconds later, which leaves the quit its own deadlines:
@@ -1122,8 +1122,8 @@ class Worker(Process):
             self.logger.debug('Waiting for next job request')
             request = self._job_requests.get()
             if self._quitting.locked():
-                # Release the hardware, unless a shutdown job has, and exit:
-                if not self._shutdown_returned:
+                # Release the hardware, unless shutdown() has been called, and exit:
+                if not self._shutdown_called:
                     try:
                         self.shutdown()
                     except Exception:
@@ -1150,11 +1150,13 @@ class Worker(Process):
                 self.logger.debug('Starting job %s', funcname)
                 try:
                     try:
-                        # Set before the check, so that a quit after it interrupts the
-                        # job, and one before it stops the job at once:
-                        self._job_running = True
+                        # Set before the check, so that a quit after it interrupts any
+                        # job but shutdown(), and one before it stops the job at once:
+                        self._job_running = funcname != 'shutdown'
                         if self._quitting.locked():
                             raise KeyboardInterrupt
+                        if funcname == 'shutdown':
+                            self._shutdown_called = True
                         results = func(*args,**kwargs)
                     finally:
                         self._job_running = False
@@ -1177,8 +1179,6 @@ class Worker(Process):
                     message = 'Attempt to pass unserialisable object %s to parent process:\n' % str(results) + message
                     success = False
                     results = None
-                if funcname == 'shutdown' and success:
-                    self._shutdown_returned = True
                 # Report to the parent whether work was successful or not,
                 # and what the results were:
                 self._reply((success,message,results))
@@ -1199,11 +1199,12 @@ class Worker(Process):
             self._job_requests.put(request)
 
     def _quit(self):
-        """Interrupt the job that is running, if any, and have the main thread call
-        shutdown() and exit. If the job has not stopped after WORKER_ABORT_TIMEOUT
-        seconds, or the worker has not exited WORKER_SHUTDOWN_TIMEOUT seconds after it
-        stopped, exit when no HDF5 file is open for writing, or after
-        WORKER_KILL_LOCK_TIMEOUT seconds. Only the first call does anything."""
+        """Interrupt the job that is running, unless it is shutdown(), and have the main
+        thread call shutdown(), unless it has been called, and exit. If the job has not
+        stopped after WORKER_ABORT_TIMEOUT seconds, or the worker has not exited
+        WORKER_SHUTDOWN_TIMEOUT seconds after it stopped, exit when no HDF5 file is open
+        for writing, or after WORKER_KILL_LOCK_TIMEOUT seconds. Only the first call does
+        anything."""
         if not self._quitting.acquire(blocking=False):
             return
         # Wake the main thread if it is waiting for a job request:
