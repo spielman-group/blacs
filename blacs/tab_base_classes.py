@@ -61,11 +61,16 @@ MODE_BUFFERED = 8
 # Duration in seconds for which a worker that has been told to quit waits for its
 # interrupted job to stop:
 WORKER_ABORT_TIMEOUT = 5
-# Duration in seconds for which a worker with a job that did not stop waits for its HDF5
-# files to be closed before it exits:
+# Duration in seconds for which a worker that has been told to quit then waits for its
+# shutdown() method to return:
+WORKER_SHUTDOWN_TIMEOUT = 5
+# Duration in seconds for which a worker with a job or shutdown() that did not finish
+# waits for its HDF5 files to be closed before it exits:
 WORKER_KILL_LOCK_TIMEOUT = 60
 # Duration in seconds for which a tab waits for a worker to exit before killing it:
-WORKER_QUIT_TIMEOUT = WORKER_ABORT_TIMEOUT + WORKER_KILL_LOCK_TIMEOUT + 5
+WORKER_QUIT_TIMEOUT = (
+    WORKER_ABORT_TIMEOUT + WORKER_SHUTDOWN_TIMEOUT + WORKER_KILL_LOCK_TIMEOUT + 5
+)
             
 class StateQueue(object):
     """The queued states of a tab, in order of priority and then of insertion. Only the
@@ -1098,12 +1103,32 @@ class Worker(Process):
         # KeyboardInterrupt only while this is set, so that the interrupt is raised in
         # the job and not in the code that runs after it:
         self._job_running = False
+        # Held once the worker has started to quit:
+        self._quitting = threading.Lock()
+        # Whether a shutdown job has returned, so that the quit need not call it again:
+        self._shutdown_returned = False
         signal.signal(signal.SIGINT, self._on_sigint)
+        # Heartbeat failure quits as a quit message does, and ends the process
+        # PARENT_DEATH_TIMEOUT seconds later, which leaves the quit its own deadlines:
+        heartbeat_client = self.process_tree.heartbeat_client
+        heartbeat_client.PARENT_DEATH_TIMEOUT = WORKER_ABORT_TIMEOUT + WORKER_SHUTDOWN_TIMEOUT + 5
+        heartbeat_client.on_parent_death = self._on_parent_death
         threading.Thread(target=self._receive, daemon=True).start()
         while True:
             # Get the next task to be done:
             self.logger.debug('Waiting for next job request')
-            funcname, args, kwargs = self._job_requests.get()
+            request = self._job_requests.get()
+            if self._quitting.locked():
+                # Release the hardware, unless a shutdown job has, and exit:
+                if not self._shutdown_returned:
+                    try:
+                        self.shutdown()
+                    except Exception:
+                        self.logger.exception('Exception in shutdown() on quit')
+                sys.stdout.flush()
+                sys.stderr.flush()
+                self.kill_lock.exit_when_released(status=0, timeout=WORKER_KILL_LOCK_TIMEOUT)
+            funcname, args, kwargs = request
             self._idle.clear()
             self.logger.debug('Got job request %s', funcname)
             try:
@@ -1116,8 +1141,8 @@ class Worker(Process):
                 message = traceback.format_exc()
                 self.logger.error("Couldn't start job:\n %s", message)
             # Report to the parent whether method lookup was successful or not:
-            self.to_parent.put((success,message,None))
-            if success:
+            self._reply((success,message,None))
+            if success and not self._quitting.locked():
                 # Try to do the requested work:
                 self.logger.debug('Starting job %s', funcname)
                 try:
@@ -1145,10 +1170,19 @@ class Worker(Process):
                     message = 'Attempt to pass unserialisable object %s to parent process:\n' % str(results) + message
                     success = False
                     results = None
+                if funcname == 'shutdown' and success:
+                    self._shutdown_returned = True
                 # Report to the parent whether work was successful or not,
                 # and what the results were:
-                self.to_parent.put((success,message,results))
+                self._reply((success,message,results))
             self._idle.set()
+
+    def _reply(self, reply):
+        try:
+            self.to_parent.put(reply)
+        except Interrupted:
+            # The parent is lost, and the worker is quitting.
+            pass
 
     def _receive(self):
         while True:
@@ -1158,21 +1192,38 @@ class Worker(Process):
             self._job_requests.put(request)
 
     def _quit(self):
-        """Interrupt the job that is running, if any, and exit. If the job has not
-        stopped after WORKER_ABORT_TIMEOUT seconds, exit when no HDF5 file is open for
-        writing, or after WORKER_KILL_LOCK_TIMEOUT seconds."""
+        """Interrupt the job that is running, if any, and have the main thread call
+        shutdown() and exit. If the job has not stopped after WORKER_ABORT_TIMEOUT
+        seconds, or the worker has not exited WORKER_SHUTDOWN_TIMEOUT seconds after it
+        stopped, exit when no HDF5 file is open for writing, or after
+        WORKER_KILL_LOCK_TIMEOUT seconds. Only the first call does anything."""
+        if not self._quitting.acquire(blocking=False):
+            return
+        # Wake the main thread if it is waiting for a job request:
+        self._job_requests.put('quit')
         if not self._idle.is_set():
             interrupt_main_thread()
-            if not self._idle.wait(WORKER_ABORT_TIMEOUT):
-                print(
-                    'The job did not stop after %d seconds. The worker will exit when '
-                    'it has no HDF5 file open for writing, or after %d seconds.'
-                    % (WORKER_ABORT_TIMEOUT, WORKER_KILL_LOCK_TIMEOUT),
-                    file=sys.stderr,
-                )
+        if self._idle.wait(WORKER_ABORT_TIMEOUT):
+            time.sleep(WORKER_SHUTDOWN_TIMEOUT)
+            reason = 'The worker did not exit %d seconds after its job stopped.' % (
+                WORKER_SHUTDOWN_TIMEOUT
+            )
+        else:
+            reason = 'The job did not stop after %d seconds.' % WORKER_ABORT_TIMEOUT
+        print(
+            reason + ' The worker will exit when it has no HDF5 file open for writing, '
+            'or after %d seconds.' % WORKER_KILL_LOCK_TIMEOUT,
+            file=sys.stderr,
+        )
         sys.stdout.flush()
         sys.stderr.flush()
         self.kill_lock.exit_when_released(status=0, timeout=WORKER_KILL_LOCK_TIMEOUT)
+
+    def _on_parent_death(self):
+        # Without a shared secret, a send to a lost parent never returns, so interrupt
+        # the main thread's:
+        self.to_parent.interrupt()
+        self._quit()
 
     def _on_sigint(self, signum, frame):
         if self._job_running:
