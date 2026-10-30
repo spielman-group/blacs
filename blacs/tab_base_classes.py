@@ -1145,12 +1145,16 @@ class Worker(Process):
                 self.logger.error("Couldn't start job:\n %s", message)
             # Report to the parent whether method lookup was successful or not:
             self._reply((success,message,None))
-            if success and not self._quitting.locked():
+            if success:
                 # Try to do the requested work:
                 self.logger.debug('Starting job %s', funcname)
                 try:
                     try:
+                        # Set before the check, so that a quit after it interrupts the
+                        # job, and one before it stops the job at once:
                         self._job_running = True
+                        if self._quitting.locked():
+                            raise KeyboardInterrupt
                         results = func(*args,**kwargs)
                     finally:
                         self._job_running = False
