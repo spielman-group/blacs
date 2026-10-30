@@ -407,6 +407,8 @@ class Tab(object):
         self._supports_smart_programming = False
         self._restart_receiver = []
         self.shutdown_workers_complete = False
+        # Set by shutdown_workers(), as BLACS quits:
+        self._blacs_quitting = False
         self._end_workers_lock = threading.Lock()
 
         self.remote_process_client = self._get_remote_configuration()
@@ -785,6 +787,17 @@ class Tab(object):
             self._timeouts = set()
             return False        
     
+    def shutdown_workers(self):
+        """Run the workers' shutdown() methods as BLACS quits, and set
+        shutdown_workers_complete once they have returned or SHUTDOWN_TIMEOUT seconds
+        have passed. A restart under way does not then rebuild the tab."""
+        self._blacs_quitting = True
+
+        def complete():
+            self.shutdown_workers_complete = True
+
+        self._shut_down_workers_then(complete)
+
     def close_tab(self, finalise=True):
         """Close the tab, terminate subprocesses and join the job thread. If
         finalise=False, then do not terminate subprocesses or join the job thread. In this
@@ -974,7 +987,6 @@ class Tab(object):
         not block the main thread. Calls subsequent GUI operations in the main thread once
         finished blocking."""
         self.finalise_close_tab(currentpage)
-        inmain(self.clean_ui_on_restart)
         inmain(self.finalise_restart, currentpage)
         
     def clean_ui_on_restart(self):
@@ -986,6 +998,11 @@ class Tab(object):
         del ui
         
     def finalise_restart(self, currentpage):
+        # BLACS, quitting, closes the tab itself. Checked in the call that removes the UI,
+        # so that the quit cannot begin in between and find the UI gone:
+        if self._blacs_quitting:
+            return
+        self.clean_ui_on_restart()
         widget = self.notebook.widget(currentpage)
         widget.setParent(None)
         widget.deleteLater()

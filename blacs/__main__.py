@@ -449,10 +449,8 @@ class BLACS(LabscriptGuiApplication):
         self.front_panel_settings.save_front_panel_to_h5(self.settings_path,data[0],data[1],data[2],data[3],{"overwrite":True},force_new_conn_table=True)
         logger.info('Shutting down workers')
         for tab in self.tablist.values():
-            if hasattr(tab, '_shut_down_workers_then'):
-                def complete(tab=tab):
-                    tab.shutdown_workers_complete = True
-                tab._shut_down_workers_then(complete)
+            if hasattr(tab, 'shutdown_workers'):
+                tab.shutdown_workers()
 
         QTimer.singleShot(100, self.finalise_quit)
 
