@@ -867,6 +867,7 @@ class ShotExecutor:
         
                     error_condition = False
                     error_devices = []
+                    restarted_devices = []
                     response_list = {}
                     # If one device fails we still transition the rest to manual mode.
                     while stop_groups:
@@ -917,7 +918,7 @@ class ShotExecutor:
                                 logger.debug('%s failed to transition to manual', name)
                             elif result == 'restart':
                                 error_condition = True
-                                error_devices.append(name)
+                                restarted_devices.append(name)
                                 logger.debug('%s restarted during transition to manual', name)
                             elif self.get_device_error_state(name, devices_in_use):
                                 error_condition = True
@@ -931,7 +932,11 @@ class ShotExecutor:
                             transition_list.pop(name, None)
                     
                     if error_condition:
-                        reason = device_status(error_devices, 'reported an error after the run')
+                        if error_devices:
+                            reason = device_status(error_devices, 'reported an error after the run')
+                        else:
+                            reason = device_status(
+                                restarted_devices, 'restarted or stopped while transitioning to manual')
                         self.set_status(f"{reason}\nRequests stopped")
 
                 except Exception:
