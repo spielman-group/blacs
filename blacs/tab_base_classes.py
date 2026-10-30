@@ -322,9 +322,7 @@ class StateMachine(object):
         self.closed = True
         self._generator = None
         # A copy, as _end_workers pops the workers from another thread:
-        for worker, to_worker, from_worker in list(self.workers.values()):
-            # If the worker is still starting up, interrupt any blocking operations:
-            worker.interrupt_startup()
+        for _, to_worker, from_worker in list(self.workers.values()):
             # Interrupt the read and write queues in case the job thread is blocking on
             # sending or receiving from them:
             if to_worker is not None:
@@ -814,6 +812,10 @@ class Tab(object):
         return currentpage
     
     def finalise_close_tab(self, currentpage):
+        # Interrupting a worker's startup waits until its process has started, so it is
+        # done here, out of the main thread, before the job thread starting it is joined:
+        for worker, _, _ in list(self.workers.values()):
+            worker.interrupt_startup()
         JOB_THREAD_TIMEOUT = 2
         if not self._statemachine.join(JOB_THREAD_TIMEOUT):
             self.logger.warning("job thread of %s did not stop", self.device_name)
