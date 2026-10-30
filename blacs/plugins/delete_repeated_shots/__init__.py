@@ -17,8 +17,7 @@ from queue import Queue
 
 from qtutils import UiLoader
 
-from labscript_utils.shared_drive import path_to_agnostic
-from labscript_utils.ls_zprocess import Lock
+from labscript_utils.h5_lock import delete_shot_file
 from blacs.plugins import PLUGINS_DIR, BasePlugin
 
 name = "Delete repeated shots"
@@ -109,14 +108,11 @@ class Plugin(BasePlugin):
                     while len(self.delete_queue) > self.n_shots_to_keep:
                         with self.delete_queue_lock:
                             h5_filepath = self.delete_queue.pop(0)
-                        # Acquire a lock on the file so that we don't
-                        # delete it whilst someone else has it open:
-                        with Lock(path_to_agnostic(h5_filepath)):
-                            try:
-                                os.unlink(h5_filepath)
-                                logger.info("Deleted repeated shot file %s", h5_filepath)
-                            except OSError:
-                                logger.exception("Couldn't delete shot file %s", h5_filepath)
+                        try:
+                            delete_shot_file(h5_filepath)
+                            logger.info("Deleted repeated shot file %s", h5_filepath)
+                        except OSError:
+                            logger.exception("Couldn't delete shot file %s", h5_filepath)
                 else:
                     raise ValueError(event)
             except Exception:
