@@ -162,11 +162,38 @@ a commit of its own, and nothing else. Once built,
 | 69a2dd3 | as is | `_end_workers` catches `ProcessExited` (F2); the worker runs `shutdown()` on quit and on a lost parent, dropping its sends to a lost parent (F3) |
 | d00b690 | as is | Stop calls `_stop_workers` (F7); `shutdown_workers` goes, with `on_save_exit`'s call (F9); the status texts are in `shot_execution.py` (F1) |
 
-Apart from these commits, the file differs from upstream today by F4, F11 and the
-style pass: docstrings, comments, f-strings, `class X:`, commented-out code, an unused
-import and an attribute nothing reads, in 111 places: 121 of the fork's lines against
-193 of upstream's. The build takes upstream's text for these, and the example tab's
-`button=None` (upstream 9fa23e7).
+The file first takes upstream's text in place of the fork's style pass, so that the
+commits apply as they are. The commits, `e56147f..` on CodeHealth, with the suite at
+each:
+
+| Commit | From | What it does | Suite |
+| --- | --- | --- | --- |
+| 413f87a | fork | `tab_base_classes.py` is upstream's with the five commits reverted, keeping F4 and F11; the example tab's `button=None` (9fa23e7) | 28 passed |
+| 360b9ae | bfaaf25 | posts the state label and tab icon update | 28 passed |
+| 9eee99c | 4c0f058 | the state machine in the main thread, with a job thread | 1 failed: the next commit's test |
+| 2b8b372 | fork | the state machine test closes its tab with `close_tab()` | 28 passed |
+| 3d6bfd7 | f89cc2b | error text, icon and colour set only on change; its `QIcon` is 7a8f018's `Icon` | 28 passed |
+| 080d4f6 | 23376cd, its lines here | logging arguments passed to the state machine's logger | 28 passed |
+| 106083b | 69a2dd3 | workers ended by a quit message; the worker's receiver thread | 28 passed |
+| 2babc61 | d00b690 | the Stop button, `Worker.shutdown`, a fatal error ends the workers; without `experiment_queue.py` | 28 passed |
+| e16c84e | 7a8f018, its line here | the stop button's `Icon` | 28 passed |
+| 653982d | F1 | "restarted or stopped" in `shot_execution.py` | 28 passed |
+| 3a97708 | F2 | `_end_workers` catches `ProcessExited` | 28 passed |
+| c03388b | F12 | `close()` iterates a copy of the workers | 28 passed |
+| c709783 | F10 | `interrupt_startup()` moves to `finalise_close_tab` | 28 passed |
+| a6dcf12 | F7 | the button calls `_stop_workers`, not `stop` | 28 passed |
+| b584192 | F9 | `shutdown_workers` goes; `on_save_exit` calls `_shut_down_workers_then` | 28 passed |
+| 95d7317 | F3 | the worker's quit calls `shutdown()`, also on a lost parent | 28 passed |
+| abd494c | fork | Tests | 30 passed, 8 subtests |
+| 6f2d38a | fork | `device-tabs.rst` | 30 passed, 8 subtests |
+| 367dd44 | fork | `DEEP_PASS.md` | 30 passed, 8 subtests |
+| a7c8ff5 | fork | this design: a send to a lost parent blocks only without a shared secret | 30 passed, 8 subtests |
+
+Against upstream/master: `blacs/tab_base_classes.py` differs by F2, F3, F4, F7, F9,
+F10, F11 and F12 only (+85 −36); `blacs/tab_frame.ui` is identical; `blacs/__main__.py`
+keeps d00b690's `finalise_quit` line as it is, and `on_save_exit` differs by F9 and the
+fork's earlier changes; `shot_execution.py` is the fork's (upstream's queue is
+`experiment_queue.py`).
 
 ### Where the fork differs from upstream
 
