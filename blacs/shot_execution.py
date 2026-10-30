@@ -738,7 +738,7 @@ class ShotExecutor:
                             outcome_status, reason = BLACS_ABORTED, 'Aborted'
                         elif restarted:
                             outcome_status, reason = BLACS_FAILED, device_status(
-                                restarted_devices, 'restarted while transitioning to buffered')
+                                restarted_devices, 'restarted or stopped while transitioning to buffered')
                         else:
                             outcome_status, reason = BLACS_FAILED, device_status(
                                 error_devices, 'in error state')
@@ -818,7 +818,7 @@ class ShotExecutor:
                         if error_devices:
                             reason = device_status(error_devices, 'in error state during the run')
                         else:
-                            reason = device_status(restarted_devices, 'restarted during the run')
+                            reason = device_status(restarted_devices, 'restarted or stopped during the run')
                         self.stop_requesting_shots(reason)
                         self.set_status(f"{reason}\nRequests stopped")
                         self.report_shot_outcome(path, BLACS_FAILED, reason)
