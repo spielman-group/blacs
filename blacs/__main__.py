@@ -538,12 +538,14 @@ class BlacsServer(ZMQServer):
         super().__init__(*args, **kwargs)
 
     def handle_get_status(self):
-        """Report what BLACS is doing, for a runmanager user who cannot see it.
+        """Return what BLACS is doing: whether it is requesting shots from runmanager
+        (`requesting_shots`), its status text (`status`), the shot it is running
+        (`shot_path`, shared-drive agnostic, and `shot_id`, None for its local override
+        shot), and why it stopped requesting shots (`error`, or None).
 
-        Read-only and the only command here: enabling requests, clearing what
-        stopped them, restarting a device and aborting a shot stay with the
-        operator at this apparatus. Not run on the GUI thread, so a BLACS busy
-        with a shot still answers."""
+        Use it to see whether the apparatus is running shots, which one, or why it
+        stopped. It answers during a shot and changes nothing; BLACS takes no command
+        that acts on the apparatus, which stays with its operator."""
         return self.blacs.shot_executor.get_status_snapshot()
 
 
