@@ -81,6 +81,15 @@ options to select either the device state or the local state on a per output bas
     selected, the front panel values of BLACS are updated to the selected value and the
     device is reprogrammed to match, restoring consistency.
 
+Saving tab settings
+-------------------
+
+``get_save_data()`` returns a tab's custom settings for application saves and
+``restore_save_data(data)`` restores them. Automatic shot archives instead use
+``get_device_save_data()``, which defaults to the same data. Override that method
+to return only data that belongs with a shot, excluding display preferences.
+Manual channel values are archived separately.
+
 Worker processes
 ----------------
 

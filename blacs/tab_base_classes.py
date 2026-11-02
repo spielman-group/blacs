@@ -496,8 +496,10 @@ class Tab(object):
                 '_splitter_sizes': self._ui.splitter.sizes()}
 
     def get_device_save_data(self):
-        """Get the settings returned by the get_save_data() method of the subclass,
-        such as camera acquisition settings."""
+        """Return custom device data to archive in shot files.
+
+        Defaults to get_save_data(). Override to exclude display preferences;
+        application settings still save the complete get_save_data() dict."""
         if hasattr(self, 'get_save_data'):
             tab_save_data = self.get_save_data()
             if isinstance(tab_save_data, dict):
@@ -507,7 +509,12 @@ class Tab(object):
 
     def get_all_save_data(self):
         save_data = self.get_builtin_save_data()
-        save_data.update(self.get_device_save_data())
+        if hasattr(self, 'get_save_data'):
+            tab_save_data = self.get_save_data()
+            if isinstance(tab_save_data, dict):
+                save_data.update(tab_save_data)
+            else:
+                self.logger.warning('Incorrect format for tab save data from the get_save_data() method. Data should be a dict. Data was: %s', tab_save_data)
         return save_data
 
     def restore_builtin_save_data(self, data):
@@ -1329,12 +1336,16 @@ class PluginTab(object):
         return {}
         
     def get_device_save_data(self):
+        """Return shot data, defaulting to get_save_data(); exclude display preferences
+        here without changing what application settings save."""
         tab_save_data = self.get_save_data()
         return tab_save_data if isinstance(tab_save_data, dict) else {}
 
     def get_all_save_data(self):
         save_data = self.get_builtin_save_data()
-        save_data.update(self.get_device_save_data())
+        tab_save_data = self.get_save_data()
+        if isinstance(tab_save_data, dict):
+            save_data.update(tab_save_data)
         return save_data
 
 

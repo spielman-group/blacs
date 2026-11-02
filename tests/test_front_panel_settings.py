@@ -14,6 +14,7 @@ import h5py
 from qtutils.qt.QtWidgets import QApplication, QFrame, QVBoxLayout
 
 from blacs.front_panel_settings import FrontPanelSettings
+from blacs.tab_base_classes import PluginTab, Tab
 from blacs.plugins import delete_repeated_shots
 from labscript_utils import ensure_str
 
@@ -97,6 +98,50 @@ class SaveAndRestoreTests(unittest.TestCase):
         self.assertEqual(front_panel[0]['base_value'], 1.5)
         self.assertEqual(ensure_str(notebook[0]['tab_name']), 'fake_device')
         self.assertEqual(eval(ensure_str(notebook[0]['data'])), {'a key': 'a value'})
+
+    def test_shot_data_can_exclude_preferences_without_losing_application_settings(self):
+        preferences = {'autolevels': True, 'targetRange_x': [0, 100],
+                       'reference_clock': 'external'}
+        cases = [(base, data) for base in (Tab, PluginTab)
+                 for data in ({}, {'reference_clock': 'external'}, None)]
+        for base, archived in cases:
+            with self.subTest(base=base.__name__, archived=archived):
+                class PreferencesTab(base):
+                    def get_builtin_save_data(self):
+                        return {}
+
+                    def get_save_data(self):
+                        return preferences
+
+                class ArchivalTab(PreferencesTab):
+                    def get_device_save_data(self):
+                        return archived
+
+                tab_class = PreferencesTab if archived is None else ArchivalTab
+                tab = tab_class.__new__(tab_class)
+                tab_data, positions, window = a_front_panel()
+                tab.settings = tab_data['fake_device']
+                self.settings.tablist = {'fake_device': tab}
+                tab_data['fake_device']['saved_data'] = tab.get_all_save_data()
+                with h5py.File(self.path, 'w') as h5_file:
+                    self.settings.store_front_panel_in_h5(
+                        h5_file, tab_data, positions, window, {}
+                    )
+                with h5py.File(self.path, 'r') as h5_file:
+                    saved = h5_file['front_panel/_notebook_data'][0]['data']
+                    self.assertEqual(eval(ensure_str(saved)), preferences)
+
+                with h5py.File(self.path, 'w') as h5_file:
+                    self.settings.store_shot_front_panel_in_h5(
+                        h5_file, self.settings.get_shot_data()
+                    )
+                with h5py.File(self.path, 'r') as h5_file:
+                    saved = h5_file['front_panel/_notebook_data'][0]['data']
+                    expected = preferences if archived is None else archived
+                    self.assertEqual(eval(ensure_str(saved)), expected)
+                    self.assertEqual(
+                        h5_file['front_panel/front_panel'][0]['base_value'], 1.5
+                    )
 
 
 class LoadIntoRunningPluginTests(unittest.TestCase):
