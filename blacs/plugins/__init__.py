@@ -12,7 +12,6 @@
 #####################################################################
 import os
 import logging
-from labscript_utils.labconfig import LabConfig
 # Plugin modules import BasePlugin, callback, Callback and DEFAULT_PRIORITY
 # from here.
 from labscript_utils.plugins import (
@@ -31,16 +30,3 @@ default_plugins = ['connection_table', 'general', 'theme']
 logger = logging.getLogger('BLACS.plugins')
 
 PLUGIN_CONFIG_SECTION = 'blacs/plugins'
-
-
-exp_config = LabConfig()
-manager = PluginManager(
-    'blacs.plugins',
-    PLUGINS_DIR,
-    exp_config,
-    PLUGIN_CONFIG_SECTION,
-    default_plugins,
-    logger,
-    entry_point_group='blacs.plugins',
-)
-modules = manager.discover_modules()

@@ -53,6 +53,7 @@ blacs_main = _import_blacs_without_starting_it()
 BlacsServer = blacs_main.BlacsServer
 
 from blacs.shot_execution import PublishedStatus, ShotExecutor
+from blacs.plugins import PLUGINS_DIR, PluginManager
 from labscript_utils.qtwidgets.link_indicator import LinkIndicator
 from qtutils.qt.QtWidgets import QApplication
 
@@ -109,6 +110,9 @@ class FakeBLACS:
     """A BLACS with nothing in it, for tests that never reach a device."""
 
     exp_config = FakeConfig()
+
+    def __init__(self):
+        self.plugin_manager = PluginManager('blacs.plugins', PLUGINS_DIR)
 
 
 def make_executor(ui=None, blacs=None, logger_name='test.shot_executor'):

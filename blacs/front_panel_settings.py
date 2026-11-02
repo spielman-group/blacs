@@ -19,7 +19,6 @@ from qtutils import inmain_decorator
 
 from labscript_utils.connections import ConnectionTable
 from labscript_utils import ensure_str
-import blacs.plugins as plugins
 
 logger = logging.getLogger('BLACS.FrontPanelSettings')
 
@@ -191,7 +190,7 @@ class FrontPanelSettings:
 
             notebook_data[device_name] = {"notebook":current_notebook_name,"page":page, "visible":visible}
 
-        plugin_data = plugins.manager.get_save_data()
+        plugin_data = self.blacs.plugin_manager.get_save_data()
 
         window_data = {
             'geometry': self.blacs.geometry_save_data(),

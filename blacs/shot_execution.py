@@ -41,7 +41,6 @@ import labscript_utils.properties
 from labscript_utils.shared_drive import path_to_agnostic, path_to_local
 
 from blacs.tab_base_classes import MODE_TRANSITION_TO_BUFFERED, MODE_BUFFERED
-import blacs.plugins as plugins
 
 from runmanager.client import (
     BLACS_ABORTED,
@@ -638,7 +637,7 @@ class ShotExecutor:
                     inmain(self._ui.shot_abort_button.clicked.connect,abort_function)
                     inmain(self._ui.shot_abort_button.setEnabled,True)
                                 
-                    plugins.manager.fire_event('pre_transition_to_buffered', path)
+                    self.BLACS.plugin_manager.fire_event('pre_transition_to_buffered', path)
 
                     start_time = time.time()
                 
@@ -769,7 +768,7 @@ class ShotExecutor:
                     logger.debug('About to start the master pseudoclock')
                     run_time = datetime.datetime.now().astimezone()
 
-                    plugins.manager.fire_event('science_starting', path)
+                    self.BLACS.plugin_manager.fire_event('science_starting', path)
 
                     self.BLACS.tablist[self.master_pseudoclock].start_run(
                         experiment_finished_notifications
@@ -853,7 +852,7 @@ class ShotExecutor:
                     continue
                              
                 finally:
-                    plugins.manager.fire_event('science_over', path)
+                    self.BLACS.plugin_manager.fire_event('science_over', path)
 
                 # Transition to manual.
                 try:
@@ -962,7 +961,7 @@ class ShotExecutor:
 
                 self.report_shot_outcome(path, BLACS_COMPLETED)
 
-                plugins.manager.fire_event('shot_complete', path)
+                self.BLACS.plugin_manager.fire_event('shot_complete', path)
 
                 self.set_status("Idle")
             except Exception:

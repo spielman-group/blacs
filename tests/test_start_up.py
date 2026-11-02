@@ -11,18 +11,38 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
+import os
 import socket
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from labscript_utils.labconfig import LabConfig
+from labscript_profile import hostname
 
 from fixtures import blacs_main
 
 
-class SecondBLACSTests(unittest.TestCase):
+class StartUpTests(unittest.TestCase):
+    def test_plugin_interfaces_import_without_reading_or_changing_host_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / 'labconfig' / f'{hostname()}.toml'
+            config_path.parent.mkdir()
+            contents = ('["blacs/plugins"]\nconnection_table = false\n'
+                        'general = false\ntheme = "not a boolean"\n')
+            config_path.write_text(contents)
+            result = subprocess.run(
+                [sys.executable, '-B', '-c',
+                 'from blacs.plugins import BasePlugin, callback'],
+                env={**os.environ, 'LABSCRIPT_SUITE_PROFILE': directory},
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(config_path.read_text(), contents)
+
     def test_a_taken_port_stops_blacs_before_any_tab(self):
         with tempfile.TemporaryDirectory() as directory, socket.socket() as held:
             # A listener in place of the first BLACS's server.

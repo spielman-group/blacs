@@ -157,6 +157,7 @@ class FakeBLACS(fixtures.FakeBLACS):
     exp_config = FakeConfig()
 
     def __init__(self, on_start_run):
+        super().__init__()
         self.front_panel_settings = FakeFrontPanelSettings()
         self.tablist = {'pseudoclock': FakeTab(on_start_run)}
 
