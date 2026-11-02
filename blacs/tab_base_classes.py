@@ -10,20 +10,13 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-from zprocess import Process, Interruptor, Interrupted, ProcessExited, interrupt_main_thread
 import time
 import sys
-import signal
-import threading
-import traceback
 import logging
-import warnings
 import queue
-import pickle
+import threading
 from html import escape
 import os
-from types import GeneratorType
-from bisect import insort
 
 from qtutils.qt.QtCore import Qt, QTimer
 from qtutils.qt.QtGui import QColor, QPalette
@@ -35,333 +28,36 @@ import qtutils.icons
 from qtutils.icons import Icon
 
 from labscript_utils.qtwidgets.elide_label import elide_label
-from labscript_utils.ls_zprocess import ProcessTree, RemoteProcessClient
+from labscript_utils.ls_zprocess import RemoteProcessClient
 from labscript_utils.shared_drive import path_to_local
+from labscript_utils.workers import (
+    Counter, StateQueue, StateMachine, WorkersMixin, Worker as _Worker,
+    WORKER_ABORT_TIMEOUT, WORKER_SHUTDOWN_TIMEOUT, WORKER_KILL_LOCK_TIMEOUT,
+    WORKER_QUIT_TIMEOUT, get_unique_id, define_state as _define_state,
+)
 from blacs import BLACS_DIR
 
-process_tree = ProcessTree.instance()
-from labscript_utils import dedent
 
-
-class Counter(object):
-    """A class with a single method that 
-    returns a different integer each time it's called."""
-    def __init__(self):
-        self.i = 0
-    def get(self):
-        self.i += 1
-        return self.i
-        
-        
 MODE_MANUAL = 1
 MODE_TRANSITION_TO_BUFFERED = 2
 MODE_TRANSITION_TO_MANUAL = 4
-MODE_BUFFERED = 8  
-
-# Duration in seconds for which a worker that has been told to quit waits for its job,
-# interrupted unless it is shutdown(), to stop:
-WORKER_ABORT_TIMEOUT = 5
-# Duration in seconds for which a worker that has been told to quit then waits for its
-# shutdown() method to return:
-WORKER_SHUTDOWN_TIMEOUT = 5
-# Duration in seconds for which a worker with a job or shutdown() that did not finish
-# waits for its HDF5 files to be closed before it exits:
-WORKER_KILL_LOCK_TIMEOUT = 60
-# Duration in seconds for which a tab waits for a worker to exit before killing it:
-WORKER_QUIT_TIMEOUT = (
-    WORKER_ABORT_TIMEOUT + WORKER_SHUTDOWN_TIMEOUT + WORKER_KILL_LOCK_TIMEOUT + 5
-)
-            
-class StateQueue(object):
-    """The queued states of a tab, in order of priority and then of insertion. Only the
-    main thread accesses the queue; put() called from another thread runs in the main
-    thread."""
-
-    def __init__(self, device_name, on_put):
-        self.logger = logging.getLogger('BLACS.%s.state_queue'%(device_name))
-        self.logging_enabled = False
-        if self.logging_enabled:
-            self.logger.debug("started")
-        
-        self.list_of_states = []
-        self._on_put = on_put
-
-    def log_current_states(self):
-        if self.logging_enabled:
-            self.logger.debug('Current items in the state queue: %s', self.list_of_states)
-
-    @inmain_decorator(True)
-    def put(self, allowed_states, queue_state_indefinitely, delete_stale_states, data, priority=0):
-        """Add a state to the queue. Lower number for priority indicates the state will
-        be executed before any states with higher numbers for their priority"""
-        # State data starts with priority, and then with a unique id that monotonically
-        # increases. This way, sorting the queue will sort first by priority and then by
-        # order added.
-        state_data = [priority, get_unique_id(), allowed_states, queue_state_indefinitely, delete_stale_states,data]
-        # Insert the task into the queue, retaining sort order first by priority and then by order added:
-        insort(self.list_of_states, state_data)
-        if self.logging_enabled:
-            if not isinstance(data[0],str):
-                self.logger.debug('New state queued up. Allowed modes: %d, queue state indefinitely: %s, delete stale states: %s, function: %s', allowed_states, queue_state_indefinitely, delete_stale_states, data[0].__name__)
-        self.log_current_states()
-        self._on_put()
-
-    def get(self, state):
-        """Remove and return the data of the first state that is allowed in the given
-        mode, or None if there is none. States that are not queued indefinitely and come
-        before it are removed."""
-        # traverse the list
-        delete_index_list = []
-        success = False
-        for i,item in enumerate(self.list_of_states):
-            priority, unique_id, allowed_states, queue_state_indefinitely, delete_stale_states, data = item
-            if self.logging_enabled:
-                self.logger.debug('iterating over states in queue')
-            if allowed_states&state:
-                # We have found one! Remove it from the list
-                delete_index_list.append(i)
-                
-                if self.logging_enabled:
-                    self.logger.debug('requested state found in queue')
-                
-                # If we are to delete stale states, see if the next state is the same statefunction.
-                # If it is, use that one, or whichever is the latest entry without encountering a different statefunction,
-                # and delete the rest
-                if delete_stale_states:
-                    state_function = data[0]
-                    i+=1
-                    while i < len(self.list_of_states) and state_function == self.list_of_states[i][5][0]:
-                        if self.logging_enabled:
-                            self.logger.debug('requesting deletion of stale state')
-                        priority, unique_id, allowed_states, queue_state_indefinitely, delete_stale_states, data = self.list_of_states[i]
-                        delete_index_list.append(i)
-                        i+=1
-                
-                success = True
-                break
-            elif not queue_state_indefinitely:
-                if self.logging_enabled:
-                    self.logger.debug('state should not be queued indefinitely')
-                delete_index_list.append(i)
-        
-        # do this in reverse order so that the first delete operation doesn't mess up the indices of subsequent ones
-        for index in reversed(sorted(delete_index_list)):
-            if self.logging_enabled:
-                self.logger.debug('deleting state')
-            del self.list_of_states[index]
-            
-        if not success:
-            data = None
-        return data
+MODE_BUFFERED = 8
 
 
-class StateMachine(object):
-    """Runs the queued states of a tab in the main thread, one at a time. A state
-    function that is a generator yields jobs for the workers. A job thread sends each
-    job to its worker and waits for the result, and the result is sent into the
-    generator in the main thread."""
-
-    def __init__(self, tab):
-        self.tab = tab
-        self.logger = logging.getLogger('BLACS.%s.mainloop' % tab.device_name)
-        self.event_queue = StateQueue(tab.device_name, self.schedule)
-        self.workers = tab.workers
-        self.closed = False
-        self.failed = False
-        self._scheduled = False
-        self._state_name = None
-        self._generator = None
-        self._job = None
-        self._jobs = queue.Queue()
-        self._thread = threading.Thread(target=self._job_loop, daemon=True)
-        self._thread.start()
-        self.logger.debug('Waiting for next event')
-
-    def schedule(self):
-        """Run the next state in a later iteration of the event loop. Called in the main
-        thread."""
-        if not self._scheduled:
-            self._scheduled = True
-            QTimer.singleShot(0, self._run_next_state)
-
-    def _run_next_state(self):
-        self._scheduled = False
-        if self.closed or self.failed or self._state_name is not None:
-            return
-        data = self.event_queue.get(self.tab.mode)
-        if data is None:
-            return
-        func, (args, kwargs) = data
-        self._state_name = func.__name__
-        self._job = None
-        self.logger.debug('Processing event %s', self._state_name)
-        self.tab.state = '%s (GUI)' % self._state_name
-        try:
-            generator = func(self.tab, *args, **kwargs)
-        except Exception:
-            self._fatal_error(traceback.format_exc())
-            return
-        if isinstance(generator, GeneratorType):
-            self._generator = generator
-            self._advance(generator.__next__)
-        else:
-            self._state_finished()
-
-    def _advance(self, step, *args):
-        """Run the generator of the current state to its next yield, and pass the job
-        that it yields to the job thread. A yield of None after the first yield repeats
-        the previous job."""
-        try:
-            job = step(*args)
-            if job or self._job is None:
-                self._job = job
-            worker_name, worker_function, _, _ = self._job
-        except StopIteration:
-            self.logger.debug('Finalising function')
-            self._generator = None
-            self._state_finished()
-            return
-        except Exception:
-            self._fatal_error(traceback.format_exc())
-            return
-        self.logger.debug('Instructing worker %s to do job %s', worker_name, worker_function)
-        if worker_function == 'init':
-            self.tab.state = 'Starting worker process (%s)' % worker_name
-        else:
-            self.tab.state = '%s (%s)' % (worker_function, worker_name)
-        self._jobs.put(self._job)
-
-    def _state_finished(self):
-        self._state_name = None
-        if self.closed:
-            return
-        self.tab.state = 'idle'
-        self.logger.debug('Waiting for next event')
-        self.schedule()
-
-    def _job_loop(self):
-        while True:
-            job = self._jobs.get()
-            if job is None:
-                return
-            try:
-                result = self._do_job(*job)
-            except Interrupted:
-                self.logger.debug('Interrupted by tab restart, quitting job thread')
-                return
-            except Exception:
-                inmain_later(self._fatal_error, traceback.format_exc())
-                return
-            inmain_later(self._job_done, *result)
-
-    def _do_job(self, worker_name, worker_function, args, kwargs):
-        """Send a job to a worker and return its success, error message and results.
-        Runs in the job thread."""
-        if worker_function == 'init':
-            # Start the worker process before running its init() method:
-            worker, _, _ = self.workers[worker_name]
-            to_worker, from_worker = worker.start(*args)
-            self.workers[worker_name] = (worker, to_worker, from_worker)
-            args = ()
-            del worker # Do not hold a reference indefinitely
-            inmain_later(self._set_state, 'init (%s)' % worker_name)
-        worker_arg_list = (worker_function, args, kwargs)
-        try:
-            pickle.dumps(worker_arg_list)
-        except Exception as e:
-            raise RuntimeError('Attempt to pass unserialisable object to child process') from e
-        _, to_worker, from_worker = self.workers[worker_name]
-        to_worker.put(worker_arg_list)
-        self.logger.debug('Waiting for worker to acknowledge job request')
-        success, message, results = from_worker.get()
-        if not success:
-            self.logger.info('Worker reported failure to start job')
-            raise RuntimeError(message)
-        self.logger.debug('Worker reported job started, waiting for completion')
-        success, message, results = from_worker.get()
-        if success:
-            self.logger.debug('Job completed')
-        else:
-            self.logger.info('Worker reported exception during job')
-        return success, message, results
-
-    def _set_state(self, state):
-        if not self.closed:
-            self.tab.state = state
-
-    def _job_done(self, success, message, results):
-        if self.closed or self.failed:
-            return
-        tab = self.tab
-        if not success:
-            now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
-            tab.error_message += ('Exception in worker - %s:<br />' % now +
-                           '<FONT COLOR=\'#ff0000\'>%s</FONT><br />'%escape(message).replace(' ','&nbsp;').replace('\n','<br />'))
-        # Reset the hide_not_responding_error_until, since we have now heard from the child
-        tab.hide_not_responding_error_until = 0
-        self.logger.debug('returning worker results to function %s', self._state_name)
-        tab.state = '%s (GUI)' % self._state_name
-        self._advance(self._generator.send, results)
-
-    def _fatal_error(self, message):
-        """Stop running states and show the error. Called in the main thread."""
-        if self.closed or self.failed:
-            return
-        self.failed = True
-        self._generator = None
-        self.logger.critical('A fatal exception happened:\n %s', message)
-        tab = self.tab
-        now = time.strftime('%a %b %d, %H:%M:%S ',time.localtime())
-        tab.error_message += ('Fatal exception in main process - %s:<br /> '%now +
-                       '<FONT COLOR=\'#ff0000\'>%s</FONT><br />'%escape(message).replace(' ','&nbsp;').replace('\n','<br />'))
-        tab.state = 'fatal error'
-        tab._ui.button_close.setEnabled(False)
-        self.logger.info('Exiting')
-        inthread(tab._end_workers)
-
-    def close(self):
-        """Stop running states, interrupt any communication with the workers, and stop
-        the job thread. Called in the main thread."""
-        if self.closed:
-            return
-        self.closed = True
-        self._generator = None
-        # A copy, as _end_workers pops the workers from another thread:
-        for _, to_worker, from_worker in list(self.workers.values()):
-            # Interrupt the read and write queues in case the job thread is blocking on
-            # sending or receiving from them:
-            if to_worker is not None:
-                to_worker.interrupt()
-                from_worker.interrupt()
-        self._jobs.put(None)
-
-    def join(self, timeout):
-        self._thread.join(timeout)
-        return not self._thread.is_alive()
-
-
-# A counter for uniqely numbering timeouts and numbering queued states monotinically,
-# such that sort order coresponds to the order the state was added to the queue:
-get_unique_id = Counter().get
-
-def define_state(allowed_modes,queue_state_indefinitely,delete_stale_states=False):
+def define_state(allowed_modes, queue_state_indefinitely, delete_stale_states=False):
     def wrap(function):
-        unescaped_name = function.__name__
-        escapedname = '_' + function.__name__
         if allowed_modes < 1 or allowed_modes > 15:
-            raise RuntimeError('Function %s has been set to run in unknown states. Please make sure allowed states is one or more of MODE_MANUAL,'%unescaped_name+
-            'MODE_TRANSITION_TO_BUFFERED, MODE_TRANSITION_TO_MANUAL and MODE_BUFFERED (or-ed together using the | symbol, eg MODE_MANUAL|MODE_BUFFERED')
-        def f(self,*args,**kwargs):
-            function.__name__ = escapedname
-            #setattr(self,escapedname,function)
-            self.event_queue.put(allowed_modes,queue_state_indefinitely,delete_stale_states,[function,[args,kwargs]])
-        f.__name__ = unescaped_name
-        f._allowed_modes = allowed_modes
-        return f        
+            raise RuntimeError('Function %s has been set to run in unknown states. Please make sure allowed states is one or more of MODE_MANUAL,' % function.__name__ +
+                               'MODE_TRANSITION_TO_BUFFERED, MODE_TRANSITION_TO_MANUAL and MODE_BUFFERED (or-ed together using the | symbol, eg MODE_MANUAL|MODE_BUFFERED')
+        state = _define_state(
+            allowed_modes, queue_state_indefinitely, delete_stale_states
+        )(function)
+        state._allowed_modes = allowed_modes
+        return state
     return wrap
-    
-        
-class Tab(object):
+
+
+class Tab(WorkersMixin):
 
     ICON_OK = ':/qtutils/fugue/tick'
     ICON_BUSY = ':/qtutils/fugue/hourglass'
@@ -369,10 +65,6 @@ class Tab(object):
     ICON_FATAL_ERROR = ':/qtutils/fugue/exclamation-red'
     ICON_STOPPED = ':/qtutils/fugue/control-stop-square'
     ICON_START = ':/qtutils/fugue/control'
-
-    # Duration in seconds for which a restart or stop waits for the workers' shutdown()
-    # methods to return before it ends the workers:
-    SHUTDOWN_TIMEOUT = 2
 
     def __init__(self,notebook,settings,restart=False):  
         # Store important parameters
@@ -403,13 +95,11 @@ class Tab(object):
         self._timeouts = set()
         self._timeout_ids = {}
         self._force_full_buffered_reprogram = True
-        self.workers = {}
         self._supports_smart_programming = False
         self._restart_receiver = []
         self.shutdown_workers_complete = False
         # Set by shutdown_workers(), as BLACS quits:
         self._blacs_quitting = False
-        self._end_workers_lock = threading.Lock()
 
         self.remote_process_client = self._get_remote_configuration()
         self.BLACS_connection = self.settings['connection_table'].find_by_name(self.device_name).BLACS_connection
@@ -463,8 +153,12 @@ class Tab(object):
         self._timeout.timeout.connect(self.check_time)
         self._timeout.start(1000)
                 
-        self._statemachine = StateMachine(self)
-        self.event_queue = self._statemachine.event_queue
+        self._init_workers(
+            'BLACS', self.device_name,
+            output_redirection_port=self._output_box.port,
+            remote_process_client=self.remote_process_client,
+            allowed_modes=15,
+        )
                 
         # Add the tab to the notebook
         self.notebook.addTab(self._ui,self.device_name)
@@ -715,38 +409,33 @@ class Tab(object):
             workerargs.setdefault(key, value)
         workerargs['is_remote'] = self.remote_process_client is not None
 
-        if name in self.workers:
-            raise Exception('There is already a worker process with name: %s'%name) 
         if name == 'GUI':
             # This is here so that we can display "(GUI)" in the status bar and have the user confident this is actually happening in the GUI,
             # not in a worker process named GUI
             raise Exception('You cannot call a worker process "GUI". Why would you want to? Your worker process cannot interact with the BLACS GUI directly, so you are just trying to confuse yourself!')
         
-        if isinstance(WorkerClass, type):
-            worker = WorkerClass(
-                process_tree,
-                output_redirection_port=self._output_box.port,
-                remote_process_client=self.remote_process_client,
-                startup_timeout=30
-                )
-        elif isinstance(WorkerClass, str):
-            # If we were passed a string for the WorkerClass, it is an import path
-            # for where the Worker class can be found. Pass it to zprocess.Process,
-            # which will do the import in the subprocess only.
-            worker = Process(
-                process_tree,
-                output_redirection_port=self._output_box.port,
-                remote_process_client=self.remote_process_client,
-                startup_timeout=30,
-                subclass_fullname=WorkerClass
-            )
-        else:
-            raise TypeError(WorkerClass)
-        self.workers[name] = (worker,None,None)
-        self.event_queue.put(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True,False,[Tab._initialise_worker,[(name, workerargs),{}]], priority=-1)
+        super().create_worker(name, WorkerClass, workerargs)
+
+    def _worker_run_args(self, worker_name, workerargs):
+        return worker_name, self.device_name, workerargs
+
+    def _worker_job_finished(self, success, message):
+        if not success:
+            now = time.strftime('%a %b %d, %H:%M:%S ', time.localtime())
+            self.error_message += ('Exception in worker - %s:<br />' % now +
+                                  "<FONT COLOR='#ff0000'>%s</FONT><br />" %
+                                  escape(message).replace(' ', '&nbsp;').replace('\n', '<br />'))
+        self.hide_not_responding_error_until = 0
+
+    def _worker_fatal_error(self, message):
+        now = time.strftime('%a %b %d, %H:%M:%S ', time.localtime())
+        self.error_message += ('Fatal exception in main process - %s:<br /> ' % now +
+                              "<FONT COLOR='#ff0000'>%s</FONT><br />" %
+                              escape(message).replace(' ', '&nbsp;').replace('\n', '<br />'))
+        self._ui.button_close.setEnabled(False)
        
     def _initialise_worker(self, worker_name, workerargs):
-        yield (self.queue_work(worker_name, 'init', worker_name, self.device_name, workerargs))
+        yield self.queue_work(worker_name, 'init', *self._worker_run_args(worker_name, workerargs))
         if self.error_message:
             raise Exception('Device failed to initialise')
                
@@ -817,7 +506,7 @@ class Tab(object):
         potentially blocking operations"""
         self.logger.info('close_tab called')
         self._timeout.stop()
-        self._statemachine.close()
+        self.close_workers()
         self.notebook = self._ui.parentWidget().parentWidget()
         currentpage = None
         if self.notebook:
@@ -835,71 +524,10 @@ class Tab(object):
         return currentpage
     
     def finalise_close_tab(self, currentpage):
-        # Interrupting a worker's startup waits until its process has started, so it is
-        # done here, out of the main thread, before the job thread starting it is joined:
-        for worker, _, _ in list(self.workers.values()):
-            worker.interrupt_startup()
-        JOB_THREAD_TIMEOUT = 2
-        if not self._statemachine.join(JOB_THREAD_TIMEOUT):
-            self.logger.warning("job thread of %s did not stop", self.device_name)
         try:
-            self._end_workers()
+            self.finalise_workers()
         finally:
-             # Shutdown the output box by joining its thread:
             self._output_box.shutdown()
-
-    def _end_workers(self):
-        """Tell the workers to quit, and kill each one that has not exited after
-        WORKER_QUIT_TIMEOUT seconds. A worker interrupts the job that it is running, and
-        if the job has not stopped after WORKER_ABORT_TIMEOUT seconds, exits when it has
-        no HDF5 file open for writing, or after WORKER_KILL_LOCK_TIMEOUT seconds. A
-        worker that has not finished starting up is killed at once. A second call waits
-        for the first to return."""
-        with self._end_workers_lock:
-            self._end_workers_locked()
-
-    def _end_workers_locked(self):
-        if self.remote_process_client is not None:
-            # Timeout for requests to the remote process server:
-            kwargs = {'get_timeout': 5}
-        else:
-            kwargs = {}
-        # Delete the workers from the dict, so that their __del__ methods are called
-        # when this method returns. This is important so that the remote process server,
-        # if any, knows we have deleted the objects:
-        workers = [self.workers.pop(name) for name in list(self.workers)]
-        children = []
-        for worker, to_worker, _ in workers:
-            worker.interrupt_startup()
-            if worker.child is None:
-                continue
-            if to_worker is not None:
-                try:
-                    # The queue's own interruptor is set when the state machine closes:
-                    to_worker.put('quit', timeout=1, interruptor=Interruptor())
-                except (TimeoutError, ProcessExited):
-                    pass
-                else:
-                    children.append(worker.child)
-                    continue
-            try:
-                worker.child.kill(**kwargs)
-            except (OSError, TimeoutError):
-                # The process has exited, or the remote process server is unreachable
-                pass
-        deadline = time.monotonic() + WORKER_QUIT_TIMEOUT
-        for child in children:
-            try:
-                while child.poll(**kwargs) is None:
-                    if time.monotonic() > deadline:
-                        self.logger.warning(
-                            "A worker of %s did not exit, killing it", self.device_name
-                        )
-                        child.kill(**kwargs)
-                        break
-                    time.sleep(0.05)
-            except (OSError, TimeoutError):
-                pass
 
     def connect_restart_receiver(self,function):
         if function not in self._restart_receiver:
@@ -915,37 +543,6 @@ class Tab(object):
                 f(self.device_name)
             except Exception:
                 self.logger.exception('Could not notify a connected receiver function')
-
-    def _shut_down_workers_then(self, callback):
-        """Run the workers' shutdown() methods before any other state, and then close
-        the state machine and call callback in the main thread, or call it after
-        SHUTDOWN_TIMEOUT seconds if the shutdown() methods have not returned. If the
-        state machine is not running, call callback at once. Called in the main
-        thread."""
-        if self._statemachine.closed or self._statemachine.failed:
-            callback()
-            return
-        callbacks = [callback]
-
-        def call_once():
-            if callbacks:
-                callbacks.pop()()
-
-        self.event_queue.put(
-            MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,
-            True,
-            False,
-            [Tab._shut_down_workers, [(call_once,), {}]],
-            priority=-1,
-        )
-        QTimer.singleShot(int(self.SHUTDOWN_TIMEOUT * 1000), call_once)
-
-    def _shut_down_workers(self, callback):
-        for worker_name in self.workers:
-            yield (self.queue_work(worker_name, 'shutdown'))
-        # The workers are ended next, so no state may reopen the hardware:
-        self._statemachine.close()
-        callback()
 
     def _on_stop_clicked(self):
         if self.state in ('stopped', 'fatal error'):
@@ -963,7 +560,7 @@ class Tab(object):
 
     def _stop_after_shutdown(self):
         self.logger.info('***STOP***')
-        self._statemachine.close()
+        self.close_workers()
         now = time.strftime('%a %b %d, %H:%M:%S', time.localtime())
         self.error_message += (
             'Worker processes stopped - %s<br />' % now
@@ -1037,8 +634,6 @@ class Tab(object):
         # If BLACS is waiting on this tab for something, tell it to abort!
         # self.BLACS.current_queue.put('abort')
     
-    def queue_work(self,worker_process,worker_function,*args,**kwargs):
-        return worker_process,worker_function,args,kwargs
         
     def set_terminal_visible(self, visible):
         if visible:
@@ -1079,193 +674,21 @@ class Tab(object):
         return True
 
 
-class Worker(Process):
-    def init(self):
-        # To be overridden by subclasses
-        pass
-
-    def shutdown(self):
-        # To be overridden by subclasses
-        pass
-    
+class Worker(_Worker):
     def run(self, worker_name, device_name, extraargs):
-        self.worker_name = worker_name
         self.device_name = device_name
-        from labscript_utils.setup_logging import setup_logging
-        setup_logging('BLACS')
-        log_name = 'BLACS.%s_%s.worker'%(self.device_name,self.worker_name)
-        self.logger = logging.getLogger(log_name)
-        self.logger.debug('Starting')
-        import labscript_utils.excepthook
-        labscript_utils.excepthook.install()
-        labscript_utils.excepthook.set_logger(self.logger)
-        from labscript_utils.ls_zprocess import ProcessTree
-        process_tree = ProcessTree.instance()
-        import labscript_utils.h5_lock
-        process_tree.zlock_client.set_process_name(log_name)
-        for name, value in extraargs.items():
-            # Only the names that Worker and its bases use, on the class or the
-            # instance, are protected: a subclass's class attribute is a default the
-            # workerarg overrides.
-            if hasattr(Worker, name) or name in vars(self):
-                msg = """attribute `{}` overwrites an attribute of the Worker base class
-                    with the same name. This may cause unexpected behaviour. Consider
-                    renaming it."""
-                warnings.warn(dedent(msg).format(name), RuntimeWarning)
-            else:
-                setattr(self, name, value)
-        self.mainloop()
+        super().run(
+            'BLACS', worker_name, extraargs,
+            log_name=f'BLACS.{device_name}_{worker_name}.worker',
+            protected_class=Worker,
+        )
 
     def _transition_to_buffered(self, device_name, h5_file, front_panel_values, fresh):
-        # The h5_file arg was converted to network-agnostic before being sent to us.
-        # Convert it to a local path before calling the subclass's
-        # transition_to_buffered() method
+        # The path crosses hosts in network-agnostic form.
         h5_file = path_to_local(h5_file)
         return self.transition_to_buffered(
             device_name, h5_file, front_panel_values, fresh
         )
-
-    def mainloop(self):
-        """Run jobs in the main thread. A thread receives the job requests from the
-        parent, so that a request to quit is received while a job is running."""
-        self._job_requests = queue.Queue()
-        # Set while no job is running:
-        self._idle = threading.Event()
-        self._idle.set()
-        # Set while the main thread is running a job other than shutdown(). _on_sigint()
-        # raises KeyboardInterrupt only while this is set, so that the interrupt is
-        # raised in the job and not in the code that runs after it:
-        self._job_running = False
-        # Held once the worker has started to quit:
-        self._quitting = threading.Lock()
-        # Whether shutdown() has been called, so that the quit does not call it again:
-        self._shutdown_called = False
-        signal.signal(signal.SIGINT, self._on_sigint)
-        # Heartbeat failure quits as a quit message does, and ends the process
-        # PARENT_DEATH_TIMEOUT seconds later, which leaves the quit its own deadlines:
-        heartbeat_client = self.process_tree.heartbeat_client
-        heartbeat_client.PARENT_DEATH_TIMEOUT = WORKER_ABORT_TIMEOUT + WORKER_SHUTDOWN_TIMEOUT + 5
-        heartbeat_client.on_parent_death = self._on_parent_death
-        threading.Thread(target=self._receive, daemon=True).start()
-        while True:
-            # Get the next task to be done:
-            self.logger.debug('Waiting for next job request')
-            request = self._job_requests.get()
-            if self._quitting.locked():
-                # Release the hardware, unless shutdown() has been called, and exit:
-                if not self._shutdown_called:
-                    try:
-                        self.shutdown()
-                    except Exception:
-                        self.logger.exception('Exception in shutdown() on quit')
-                sys.stdout.flush()
-                sys.stderr.flush()
-                self.kill_lock.exit_when_released(status=0, timeout=WORKER_KILL_LOCK_TIMEOUT)
-            funcname, args, kwargs = request
-            self._idle.clear()
-            self.logger.debug('Got job request %s', funcname)
-            try:
-                # See if we have a method with that name:
-                func = getattr(self,funcname)
-                success = True
-                message = ''
-            except AttributeError:
-                success = False
-                message = traceback.format_exc()
-                self.logger.error("Couldn't start job:\n %s", message)
-            # Report to the parent whether method lookup was successful or not:
-            self._reply((success,message,None))
-            if success:
-                # Try to do the requested work:
-                self.logger.debug('Starting job %s', funcname)
-                try:
-                    try:
-                        # Set before the check, so that a quit after it interrupts any
-                        # job but shutdown(), and one before it stops the job at once:
-                        self._job_running = funcname != 'shutdown'
-                        if self._quitting.locked():
-                            raise KeyboardInterrupt
-                        if funcname == 'shutdown':
-                            self._shutdown_called = True
-                        results = func(*args,**kwargs)
-                    finally:
-                        self._job_running = False
-                    success = True
-                    message = ''
-                    self.logger.debug('Job complete')
-                except (Exception, KeyboardInterrupt):
-                    results = None
-                    success = False
-                    traceback_lines = traceback.format_exception(*sys.exc_info())
-                    del traceback_lines[1]
-                    message = ''.join(traceback_lines)
-                    self.logger.error('Exception in job:\n%s', message)
-                # Check if results object is serialisable:
-                try:
-                    pickle.dumps(results)
-                except Exception:
-                    message = traceback.format_exc()
-                    self.logger.error('Job returned unserialisable datatypes, cannot pass them back to parent.\n%s', message)
-                    message = 'Attempt to pass unserialisable object %s to parent process:\n' % str(results) + message
-                    success = False
-                    results = None
-                # Report to the parent whether work was successful or not,
-                # and what the results were:
-                self._reply((success,message,results))
-            self._idle.set()
-
-    def _reply(self, reply):
-        try:
-            self.to_parent.put(reply)
-        except Interrupted:
-            # The parent is lost, and the worker is quitting.
-            pass
-
-    def _receive(self):
-        while True:
-            request = self.from_parent.get()
-            if request == 'quit':
-                self._quit()
-            self._job_requests.put(request)
-
-    def _quit(self):
-        """Interrupt the job that is running, unless it is shutdown(), and have the main
-        thread call shutdown(), unless it has been called, and exit. If the job has not
-        stopped after WORKER_ABORT_TIMEOUT seconds, or the worker has not exited
-        WORKER_SHUTDOWN_TIMEOUT seconds after it stopped, exit when no HDF5 file is open
-        for writing, or after WORKER_KILL_LOCK_TIMEOUT seconds. Only the first call does
-        anything."""
-        if not self._quitting.acquire(blocking=False):
-            return
-        # Wake the main thread if it is waiting for a job request:
-        self._job_requests.put('quit')
-        if not self._idle.is_set():
-            interrupt_main_thread()
-        if self._idle.wait(WORKER_ABORT_TIMEOUT):
-            time.sleep(WORKER_SHUTDOWN_TIMEOUT)
-            reason = 'The worker did not exit %d seconds after its job stopped.' % (
-                WORKER_SHUTDOWN_TIMEOUT
-            )
-        else:
-            reason = 'The job did not stop after %d seconds.' % WORKER_ABORT_TIMEOUT
-        print(
-            reason + ' The worker will exit when it has no HDF5 file open for writing, '
-            'or after %d seconds.' % WORKER_KILL_LOCK_TIMEOUT,
-            file=sys.stderr,
-        )
-        sys.stdout.flush()
-        sys.stderr.flush()
-        self.kill_lock.exit_when_released(status=0, timeout=WORKER_KILL_LOCK_TIMEOUT)
-
-    def _on_parent_death(self):
-        # Without a shared secret, a send to a lost parent never returns, so interrupt
-        # the main thread's:
-        self.to_parent.interrupt()
-        self._quit()
-
-    def _on_sigint(self, signum, frame):
-        if self._job_running:
-            raise KeyboardInterrupt
 
 
 class PluginTab(object):

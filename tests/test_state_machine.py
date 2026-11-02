@@ -11,6 +11,7 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
+import os
 import subprocess
 import sys
 import tempfile
@@ -93,6 +94,16 @@ class CleanupWorker(Worker):
     def shutdown(self):
         self.record('r')
 
+    def fail_job(self):
+        raise RuntimeError('A worker method failed')
+
+    @property
+    def die_before_ack(self):
+        os._exit(1)
+
+    def die_after_ack(self):
+        os._exit(1)
+
     def record(self, event):
         # Stands in for hardware, such as NI-DAQmx tasks: a log of each allocation and
         # each release.
@@ -146,6 +157,10 @@ class CleanupTab(Tab):
     @define_state(MODE_MANUAL, True)
     def fail(self):
         raise RuntimeError('A fatal error')
+
+    @define_state(MODE_MANUAL, True)
+    def run_job(self, method):
+        self.result = yield self.queue_work('main', method)
 
 
 def quit_blacs(tab):
@@ -204,6 +219,35 @@ time.sleep(60)
 class WorkerCleanupTests(unittest.TestCase):
     def make_directory(self):
         return Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def test_a_method_error_returns_none_but_a_missing_method_is_fatal(self):
+        tab = CleanupTab(DragDropTabWidget(), {
+            'device_name': 'errors', 'connection_table': ConnectionTable(),
+            'worker': CleanupWorker, 'directory': self.make_directory(),
+        })
+        self.addCleanup(tab.close_tab)
+        wait_until(lambda: tab.workers['main'][1] and tab.state == 'idle')
+        tab.result = 'not returned'
+        tab.run_job('fail_job')
+        wait_until(lambda: tab.result is None)
+        self.assertIn('RuntimeError', tab._ui.error_message.toPlainText())
+        self.assertEqual(tab.state, 'idle')
+        tab.run_job('missing_method')
+        wait_until(lambda: tab.state == 'fatal error')
+        self.assertIn('missing_method', tab.error_message)
+
+    def test_a_worker_dying_before_either_reply_reports_an_error(self):
+        for method in ('die_before_ack', 'die_after_ack'):
+            with self.subTest(method=method):
+                tab = CleanupTab(DragDropTabWidget(), {
+                    'device_name': method, 'connection_table': ConnectionTable(),
+                    'worker': CleanupWorker, 'directory': self.make_directory(),
+                })
+                self.addCleanup(tab.close_tab)
+                wait_until(lambda: tab.workers['main'][1] and tab.state == 'idle')
+                tab.run_job(method)
+                wait_until(lambda: tab.state == 'fatal error', timeout=5)
+                self.assertIn('exit', tab.error_message.lower())
 
     def test_however_a_worker_is_ended_its_shutdown_releases_the_hardware_once(self):
         notebook = DragDropTabWidget()
