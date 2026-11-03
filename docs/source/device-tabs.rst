@@ -118,6 +118,13 @@ device programming is limited by communication with the device rather than by th
 processing power of the PC, so the programming of a group of devices typically takes as
 long as the programming of the slowest device in the group.
 
+If **Stop** or **Restart** cannot confirm a worker's exit, the tab's controls
+and error display remain available, and no replacement worker is started.
+The error identifies the worker and, for a remote worker, its host. To retry,
+restore the process-server connection if the worker is remote, then explicitly
+click **Restart**. BLACS confirms termination before rebuilding the tab;
+reconnection alone does not start replacement workers.
+
 State machine
 -------------
 
