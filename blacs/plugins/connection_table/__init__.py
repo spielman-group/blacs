@@ -19,7 +19,7 @@ from qtutils.qt.QtGui import QStandardItemModel, QStandardItem
 import labscript_utils.qtwidgets.file_dialogs as file_dialogs
 
 from blacs.compile_and_restart import CompileAndRestart
-from runmanager.globals_file import default_toml_path
+from runmanager.globals_file import convert_to_toml, default_toml_path
 from labscript_utils.filewatcher import FileWatcher
 from labscript_utils.labconfig import LabConfig
 from labscript_utils.text_editor import open_in_editor
@@ -243,7 +243,11 @@ class Setting:
     def normalize_globals_path(self, filepath):
         filepath = os.path.normpath(str(filepath))
         if os.path.splitext(filepath)[1].lower() in ('.h5', '.hdf5'):
-            return default_toml_path(filepath)
+            # LEGACY HDF5 GLOBALS FILES. DEPRECATED CODE, WILL BE REMOVED.
+            toml_path = default_toml_path(filepath)
+            if not os.path.exists(toml_path):
+                convert_to_toml(filepath, toml_path)
+            return toml_path
         return filepath
         
     # Return the settings page and an icon for its label; the label text is the
