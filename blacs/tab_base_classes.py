@@ -586,9 +586,17 @@ class Tab(WorkersMixin):
             message = (f'Could not confirm that {noun} {names}{where} stopped. '
                        'No replacement was started. ')
             if host:
-                message += f"Restore the connection to {host}'s process server, then click Restart to retry stopping the workers."
+                message += (
+                    f"Restore the connection to {host}'s process server, then click Restart "
+                    'to retry termination. Once termination is confirmed, BLACS starts '
+                    'replacement workers and initialises the device. '
+                    'Reconnecting alone does not start them.'
+                )
             else:
-                message += 'Click Restart to retry stopping the workers.'
+                message += (
+                    'Click Restart to retry termination. Once termination is confirmed, '
+                    'BLACS starts replacement workers and initialises the device.'
+                )
             self.error_message += escape(message) + '<br />'
         self._ui.button_stop.setEnabled(True)
         self._ui.button_restart.setEnabled(True)
