@@ -525,6 +525,7 @@ class Tab(WorkersMixin):
     
     def finalise_close_tab(self, currentpage):
         try:
+            # Unconfirmed exits are logged; application close still ends this attempt.
             self.finalise_workers()
         finally:
             self._output_box.shutdown()
@@ -561,21 +562,34 @@ class Tab(WorkersMixin):
     def _stop_after_shutdown(self):
         self.logger.info('***STOP***')
         self.close_workers()
-        now = time.strftime('%a %b %d, %H:%M:%S', time.localtime())
-        self.error_message += (
-            'Worker processes stopped - %s<br />' % now
-            + 'Click the start button to start them and initialise the device.<br />'
-        )
         self._ui.button_close.setEnabled(False)
         self.state = 'stopping'
         inthread(self._end_workers_for_stop)
 
     def _end_workers_for_stop(self):
-        self._end_workers()
-        inmain_later(self._stopped)
+        inmain_later(self._stopped, self._end_workers())
 
-    def _stopped(self):
-        self.state = 'stopped'
+    def _stopped(self, stopped):
+        self.state = 'stopped' if stopped else 'fatal error'
+        self._ui.button_close.setEnabled(False)
+        if stopped:
+            now = time.strftime('%a %b %d, %H:%M:%S', time.localtime())
+            self.error_message += (
+                'Worker processes stopped - %s<br />' % now
+                + 'Click the start button to start them and initialise the device.<br />'
+            )
+        else:
+            names = ', '.join(self.workers)
+            host = self.remote_process_client.host if self.remote_process_client else None
+            where = f' on host {host}' if host else ''
+            noun = 'worker' if len(self.workers) == 1 else 'workers'
+            message = (f'Could not confirm that {noun} {names}{where} stopped. '
+                       'No replacement was started. ')
+            if host:
+                message += f"Restore the connection to {host}'s process server, then click Restart to retry stopping the workers."
+            else:
+                message += 'Click Restart to retry stopping the workers.'
+            self.error_message += escape(message) + '<br />'
         self._ui.button_stop.setEnabled(True)
         self._ui.button_restart.setEnabled(True)
 
@@ -586,17 +600,20 @@ class Tab(WorkersMixin):
         self._shut_down_workers_then(self._restart_after_shutdown)
 
     def _restart_after_shutdown(self):
-        currentpage = self.close_tab(finalise=False)
+        self.close_workers()
         self.logger.info('***RESTART***')
         self.settings['saved_data'] = self.get_all_save_data()
-        self._restart_thread = inthread(self.continue_restart, currentpage)
+        self._restart_thread = inthread(self.continue_restart)
         
-    def continue_restart(self, currentpage):
+    def continue_restart(self):
         """Called in a thread for the stages of restarting that may be blocking, so as to
         not block the main thread. Calls subsequent GUI operations in the main thread once
         finished blocking."""
-        self.finalise_close_tab(currentpage)
-        inmain(self.finalise_restart, currentpage)
+        if self.finalise_workers():
+            self._output_box.shutdown()
+            inmain(self.finalise_restart)
+        else:
+            inmain(self._stopped, False)
         
     def clean_ui_on_restart(self):
         # Clean up UI
@@ -606,11 +623,12 @@ class Tab(WorkersMixin):
         ui.deleteLater()
         del ui
         
-    def finalise_restart(self, currentpage):
-        # BLACS, quitting, closes the tab itself. Checked in the call that removes the UI,
-        # so that the quit cannot begin in between and find the UI gone:
+    def finalise_restart(self):
+        # F15: checking quit and removing the old UI share this main-thread call.
+        # BLACS closes the tab itself once quitting has begun.
         if self._blacs_quitting:
             return
+        currentpage = self.close_tab(finalise=False)
         self.clean_ui_on_restart()
         widget = self.notebook.widget(currentpage)
         widget.setParent(None)

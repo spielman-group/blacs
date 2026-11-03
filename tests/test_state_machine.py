@@ -17,8 +17,10 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from qtutils import inthread
 from qtutils.qt.QtWidgets import QApplication
@@ -178,12 +180,21 @@ def quit_as_a_job_starts(tab):
     quit_blacs(tab)
 
 
+def quit_during_restart(tab):
+    ui = tab._ui
+    tab.restart()
+    wait_until(lambda: hasattr(tab, '_restart_thread') and tab._restart_thread.is_alive())
+    quit_blacs(tab)
+    wait_until(lambda: not tab._restart_thread.is_alive())
+    assert tab._ui is ui, 'F15: a quitting restart must leave UI removal to BLACS'
+
+
 ENDS = {
     'restart': lambda tab: tab.restart(),
     'stop': lambda tab: tab._ui.button_stop.click(),
     'quit': quit_blacs,
     'quit with a state queued': lambda tab: (tab.allocate(), quit_blacs(tab)),
-    'quit during a restart': lambda tab: (tab.restart(), quit_blacs(tab)),
+    'quit during a restart': quit_during_restart,
     'quit as a job starts': quit_as_a_job_starts,
     'fatal error': lambda tab: tab.fail(),
     'raising shutdown': quit_blacs,
@@ -191,6 +202,7 @@ ENDS = {
     'hanging shutdown': quit_blacs,
 }
 WORKERS = {
+    'quit during a restart': SlowWorker,
     'quit as a job starts': LateQuitWorker,
     'raising shutdown': RaisingWorker,
     'slow shutdown': SlowWorker,
@@ -219,6 +231,43 @@ time.sleep(60)
 class WorkerCleanupTests(unittest.TestCase):
     def make_directory(self):
         return Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def test_unconfirmed_exit_keeps_the_controls_and_blocks_replacement_until_retry(self):
+        directory = self.make_directory()
+        tab = CleanupTab(DragDropTabWidget(), {
+            'device_name': 'uncertain', 'connection_table': ConnectionTable(),
+            'worker': CleanupWorker, 'directory': directory,
+        })
+        self.addCleanup(tab.close_tab)
+        wait_until(lambda: tab.workers['main'][1] and tab.state == 'idle')
+        ui, output = tab._ui, tab._output_box
+        child = tab.workers['main'][0].child
+        # The process-server observation is unavailable; the worker transport is real.
+        with mock.patch.object(child, 'poll', side_effect=TimeoutError('offline')), \
+             mock.patch.object(child, 'kill', side_effect=TimeoutError('offline')):
+            tab.remote_process_client = types.SimpleNamespace(host='control-host')
+            try:
+                ui.button_stop.click()
+                wait_until(ui.button_restart.isEnabled)
+                self.assertEqual(tab.state, 'fatal error')
+                self.assertNotIn('Worker processes stopped', ui.error_message.toPlainText())
+                ui.button_restart.click()
+                wait_until(lambda: not tab._restart_thread.is_alive())
+                self.assertIs(tab._ui, ui)
+                self.assertIs(tab._output_box, output)
+                self.assertGreaterEqual(tab.notebook.indexOf(ui), 0)
+                self.assertTrue(ui.button_restart.isEnabled())
+                text = ui.error_message.toPlainText()
+                for word in ('main', 'control-host', 'No replacement', 'Restore', 'Restart'):
+                    self.assertIn(word, text)
+                self.assertEqual((directory / 'hardware').read_text(), 'ar')
+            finally:
+                tab.remote_process_client = None
+        ui.button_restart.click()
+        wait_until(lambda: not tab._restart_thread.is_alive()
+                   and tab.workers['main'][1] and tab.state == 'idle')
+        self.assertIsNot(tab._ui, ui)
+        self.assertEqual((directory / 'hardware').read_text(), 'ara')
 
     def test_a_method_error_returns_none_but_a_missing_method_is_fatal(self):
         tab = CleanupTab(DragDropTabWidget(), {
