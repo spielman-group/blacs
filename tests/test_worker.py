@@ -45,9 +45,10 @@ class WorkerargTests(unittest.TestCase):
             self.assertEqual(self.run_worker({'timeout': 2}).timeout, 2)
 
     def test_a_name_the_worker_base_class_has_is_refused_with_a_warning(self):
-        with self.assertWarns(RuntimeWarning):
-            worker = self.run_worker({'init': None})
-        self.assertTrue(callable(worker.init))
+        for name in ('init', '_transition_to_buffered'):
+            with self.subTest(name=name), self.assertWarns(RuntimeWarning):
+                worker = self.run_worker({name: None})
+            self.assertTrue(callable(getattr(worker, name)))
 
 
 if __name__ == '__main__':

@@ -15,8 +15,9 @@ from qtutils.qt.QtWidgets import QApplication, QFrame, QVBoxLayout
 
 from blacs.front_panel_settings import FrontPanelSettings
 from blacs.tab_base_classes import PluginTab, Tab
-from blacs.plugins import delete_repeated_shots
+from blacs.plugins import connection_table, delete_repeated_shots
 from labscript_utils import ensure_str
+import runmanager.globals_file as globals_file
 
 # The plugin's widgets need an application, held for the life of the process.
 _qapplication = QApplication.instance() or QApplication([])
@@ -145,6 +146,32 @@ class SaveAndRestoreTests(unittest.TestCase):
 
 
 class LoadIntoRunningPluginTests(unittest.TestCase):
+    def test_legacy_connection_table_globals_are_converted_without_overwriting_toml(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for extension in ('.h5', '.hdf5'):
+                with self.subTest(extension=extension):
+                    path = os.path.join(directory, 'globals' + extension)
+                    toml_path = globals_file.default_toml_path(path)
+                    with h5py.File(path, 'w') as h5_file:
+                        group = h5_file.create_group('globals/hardware')
+                        group.attrs['voltage'] = '2 + 3'
+                        group.create_group('units').attrs['voltage'] = 'V'
+                    setting = connection_table.Setting({'globals_list': [path]})
+
+                    self.assertEqual(setting.get_value('globals_list'), [toml_path])
+                    self.assertTrue(os.path.isfile(toml_path))
+                    self.assertEqual(
+                        globals_file.get_globals_details({'hardware': toml_path}),
+                        globals_file.get_globals_details({'hardware': path}),
+                    )
+                    globals_file.set_field(toml_path, 'hardware', 'voltage', 'default', '9')
+
+                    self.assertEqual(setting.get_value('globals_list'), [toml_path])
+                    record = globals_file.get_global_record(toml_path, 'hardware', 'voltage')
+                    self.assertEqual(record['default'], '9')
+                    self.assertTrue(os.path.isfile(path))
+                    os.remove(toml_path)
+
     def test_a_loaded_front_panel_sets_the_running_repeated_shot_limit(self):
         frame = QFrame()
         frame.setLayout(QVBoxLayout())

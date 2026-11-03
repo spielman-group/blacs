@@ -100,10 +100,9 @@ from labscript_utils.qtwidgets.themed_window import ThemedWindow
 from labscript_utils.qtwidgets.application import (
     LabscriptGuiApplication,
     exec_qapplication,
-    setup_application,
 )
 from labscript_utils.labconfig import LabConfig, get_default_appconfig_file
-from labscript_utils.plugins import MenuContext
+from labscript_utils.plugins import MenuContext, PluginManager
 from labscript_profile import hostname
 from blacs.client import DEFAULT_PORT
 from blacs.shot_execution import ShotExecutor
@@ -144,7 +143,7 @@ class BLACSWindow(ThemedWindow, QMainWindow):
                 self.blacs.exit_started = True
                 self.blacs.settings.close()
                 self.blacs.server.shutdown()
-                plugins.manager.close_plugins()
+                self.blacs.plugin_manager.close_plugins()
 
                 inmain_later(self.blacs.on_save_exit)
 
@@ -200,6 +199,17 @@ class BLACS(LabscriptGuiApplication):
         self.connection_table_h5file = self.exp_config.get('paths','connection_table_h5')
         self.connection_table_labscript = self.exp_config.get('paths','connection_table_py')
 
+        self.plugin_manager = PluginManager(
+            'blacs.plugins',
+            plugins.PLUGINS_DIR,
+            self.exp_config,
+            plugins.PLUGIN_CONFIG_SECTION,
+            plugins.default_plugins,
+            plugins.logger,
+            entry_point_group='blacs.plugins',
+        )
+        self.plugin_manager.discover_modules()
+
         self.tablist = {}
         self.settings_dict = {}
 
@@ -244,8 +254,8 @@ class BLACS(LabscriptGuiApplication):
 
         splash.update_text('instantiating plugins')
         logger.info('Instantiating plugins')
-        self.plugins = plugins.manager.instantiate_plugins()
-        plugins.manager.restore_save_data(
+        self.plugins = self.plugin_manager.instantiate_plugins()
+        self.plugin_manager.restore_save_data(
             ast.literal_eval(tab_data['BLACS settings'].get('plugin_data', '{}'))
         )
 
@@ -306,7 +316,7 @@ class BLACS(LabscriptGuiApplication):
         self.notifications = Notifications(blacs_data)
         self.settings = Settings(file=self.settings_path, parent=self.ui)
         self.settings.register_callback(
-            lambda: plugins.manager.fire_event('settings_changed')
+            lambda: self.plugin_manager.fire_event('settings_changed')
         )
         blacs_data['notifications'] = self.notifications
         blacs_data['settings'] = self.settings
@@ -314,13 +324,13 @@ class BLACS(LabscriptGuiApplication):
         # Plugins add their menus, preferences pages and notifications here:
         menus = MenuContext(logger=logger, icon_factory=Icon)
         menus.register_location('menubar', self.ui.menubar)
-        plugins.manager.register_context('menus', menus)
-        plugins.manager.register_context('settings', self.settings)
-        plugins.manager.register_context('notifications', self.notifications)
-        plugins.manager.setup_contexts(blacs_data)
+        self.plugin_manager.register_context('menus', menus)
+        self.plugin_manager.register_context('settings', self.settings)
+        self.plugin_manager.register_context('notifications', self.notifications)
+        self.plugin_manager.setup_contexts(blacs_data)
         menus.render()
 
-        plugins.manager.setup_complete(blacs_data)
+        self.plugin_manager.setup_complete(blacs_data)
 
         self.ui.actionOpenPreferences.triggered.connect(self.on_open_preferences)
         self.ui.actionSave.triggered.connect(self.on_save_front_panel)
@@ -428,7 +438,7 @@ class BLACS(LabscriptGuiApplication):
                         )
                         # A shot file has no plugin data, and leaves the plugins as they are.
                         if 'plugin_data' in tab_data['BLACS settings']:
-                            plugins.manager.restore_save_data(
+                            self.plugin_manager.restore_save_data(
                                 ast.literal_eval(tab_data['BLACS settings']['plugin_data'])
                             )
                 except Exception as e:
@@ -570,7 +580,6 @@ def exit_if_port_in_use(exp_config):
 if __name__ == '__main__':
     splash.update_text('initialising Qt application')
     qapplication = get_qapplication()
-    setup_application(qapplication)
     logger.info('QApplication instantiated')
 
     splash.update_text('loading labconfig')

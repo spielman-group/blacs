@@ -11,13 +11,16 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
+import os
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from qtutils import inthread
 from qtutils.qt.QtWidgets import QApplication
@@ -93,6 +96,16 @@ class CleanupWorker(Worker):
     def shutdown(self):
         self.record('r')
 
+    def fail_job(self):
+        raise RuntimeError('A worker method failed')
+
+    @property
+    def die_before_ack(self):
+        os._exit(1)
+
+    def die_after_ack(self):
+        os._exit(1)
+
     def record(self, event):
         # Stands in for hardware, such as NI-DAQmx tasks: a log of each allocation and
         # each release.
@@ -147,6 +160,10 @@ class CleanupTab(Tab):
     def fail(self):
         raise RuntimeError('A fatal error')
 
+    @define_state(MODE_MANUAL, True)
+    def run_job(self, method):
+        self.result = yield self.queue_work('main', method)
+
 
 def quit_blacs(tab):
     # What BLACS's quit does, closing the tab at the next of its 100 ms polls.
@@ -163,12 +180,20 @@ def quit_as_a_job_starts(tab):
     quit_blacs(tab)
 
 
+def quit_during_restart(tab):
+    tab.restart()
+    wait_until(lambda: hasattr(tab, '_restart_thread') and tab._restart_thread.is_alive())
+    quit_blacs(tab)
+    wait_until(lambda: not tab._restart_thread.is_alive())
+    assert not tab.workers, 'F15: a quitting restart must not create replacement workers'
+
+
 ENDS = {
     'restart': lambda tab: tab.restart(),
     'stop': lambda tab: tab._ui.button_stop.click(),
     'quit': quit_blacs,
     'quit with a state queued': lambda tab: (tab.allocate(), quit_blacs(tab)),
-    'quit during a restart': lambda tab: (tab.restart(), quit_blacs(tab)),
+    'quit during a restart': quit_during_restart,
     'quit as a job starts': quit_as_a_job_starts,
     'fatal error': lambda tab: tab.fail(),
     'raising shutdown': quit_blacs,
@@ -176,6 +201,7 @@ ENDS = {
     'hanging shutdown': quit_blacs,
 }
 WORKERS = {
+    'quit during a restart': SlowWorker,
     'quit as a job starts': LateQuitWorker,
     'raising shutdown': RaisingWorker,
     'slow shutdown': SlowWorker,
@@ -204,6 +230,68 @@ time.sleep(60)
 class WorkerCleanupTests(unittest.TestCase):
     def make_directory(self):
         return Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def test_unconfirmed_exit_keeps_the_controls_and_blocks_replacement_until_retry(self):
+        directory = self.make_directory()
+        tab = CleanupTab(DragDropTabWidget(), {
+            'device_name': 'uncertain', 'connection_table': ConnectionTable(),
+            'worker': CleanupWorker, 'directory': directory,
+        })
+        self.addCleanup(tab.close_tab)
+        wait_until(lambda: tab.workers['main'][1] and tab.state == 'idle')
+        child = tab.workers['main'][0].child
+        # The process-server observation is unavailable; the worker transport is real.
+        with mock.patch.object(child, 'poll', side_effect=TimeoutError('offline')), \
+             mock.patch.object(child, 'kill', side_effect=TimeoutError('offline')):
+            tab.remote_process_client = types.SimpleNamespace(host='control-host')
+            try:
+                tab._ui.button_stop.click()
+                wait_until(lambda: tab._ui.button_restart.isEnabled())
+                self.assertEqual(tab.state, 'fatal error')
+                self.assertNotIn('Worker processes stopped', tab._ui.error_message.toPlainText())
+                tab._ui.button_restart.click()
+                wait_until(lambda: not tab._restart_thread.is_alive())
+                self.assertGreaterEqual(tab.notebook.indexOf(tab._ui), 0)
+                self.assertTrue(tab._ui.button_restart.isEnabled())
+                text = tab._ui.error_message.toPlainText()
+                for word in ('main', 'control-host'):
+                    self.assertIn(word, text)
+                self.assertEqual((directory / 'hardware').read_text(), 'ar')
+            finally:
+                tab.remote_process_client = None
+        tab._ui.button_restart.click()
+        wait_until(lambda: not tab._restart_thread.is_alive()
+                   and tab.workers['main'][1] and tab.state == 'idle')
+        self.assertEqual((directory / 'hardware').read_text(), 'ara')
+
+    def test_a_method_error_returns_none_but_a_missing_method_is_fatal(self):
+        tab = CleanupTab(DragDropTabWidget(), {
+            'device_name': 'errors', 'connection_table': ConnectionTable(),
+            'worker': CleanupWorker, 'directory': self.make_directory(),
+        })
+        self.addCleanup(tab.close_tab)
+        wait_until(lambda: tab.workers['main'][1] and tab.state == 'idle')
+        tab.result = 'not returned'
+        tab.run_job('fail_job')
+        wait_until(lambda: tab.result is None)
+        self.assertIn('RuntimeError', tab._ui.error_message.toPlainText())
+        self.assertEqual(tab.state, 'idle')
+        tab.run_job('missing_method')
+        wait_until(lambda: tab.state == 'fatal error')
+        self.assertIn('missing_method', tab.error_message)
+
+    def test_a_worker_dying_before_either_reply_reports_an_error(self):
+        for method in ('die_before_ack', 'die_after_ack'):
+            with self.subTest(method=method):
+                tab = CleanupTab(DragDropTabWidget(), {
+                    'device_name': method, 'connection_table': ConnectionTable(),
+                    'worker': CleanupWorker, 'directory': self.make_directory(),
+                })
+                self.addCleanup(tab.close_tab)
+                wait_until(lambda: tab.workers['main'][1] and tab.state == 'idle')
+                tab.run_job(method)
+                wait_until(lambda: tab.state == 'fatal error', timeout=5)
+                self.assertIn('exit', tab.error_message.lower())
 
     def test_however_a_worker_is_ended_its_shutdown_releases_the_hardware_once(self):
         notebook = DragDropTabWidget()
