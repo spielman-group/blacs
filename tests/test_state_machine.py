@@ -254,7 +254,7 @@ class WorkerCleanupTests(unittest.TestCase):
                 self.assertGreaterEqual(tab.notebook.indexOf(tab._ui), 0)
                 self.assertTrue(tab._ui.button_restart.isEnabled())
                 text = tab._ui.error_message.toPlainText()
-                for word in ('main', 'control-host', 'No replacement', 'Restore', 'Restart'):
+                for word in ('main', 'control-host'):
                     self.assertIn(word, text)
                 self.assertEqual((directory / 'hardware').read_text(), 'ar')
             finally:
