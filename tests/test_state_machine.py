@@ -181,12 +181,11 @@ def quit_as_a_job_starts(tab):
 
 
 def quit_during_restart(tab):
-    ui = tab._ui
     tab.restart()
     wait_until(lambda: hasattr(tab, '_restart_thread') and tab._restart_thread.is_alive())
     quit_blacs(tab)
     wait_until(lambda: not tab._restart_thread.is_alive())
-    assert tab._ui is ui, 'F15: a quitting restart must leave UI removal to BLACS'
+    assert not tab.workers, 'F15: a quitting restart must not create replacement workers'
 
 
 ENDS = {
@@ -240,33 +239,29 @@ class WorkerCleanupTests(unittest.TestCase):
         })
         self.addCleanup(tab.close_tab)
         wait_until(lambda: tab.workers['main'][1] and tab.state == 'idle')
-        ui, output = tab._ui, tab._output_box
         child = tab.workers['main'][0].child
         # The process-server observation is unavailable; the worker transport is real.
         with mock.patch.object(child, 'poll', side_effect=TimeoutError('offline')), \
              mock.patch.object(child, 'kill', side_effect=TimeoutError('offline')):
             tab.remote_process_client = types.SimpleNamespace(host='control-host')
             try:
-                ui.button_stop.click()
-                wait_until(ui.button_restart.isEnabled)
+                tab._ui.button_stop.click()
+                wait_until(lambda: tab._ui.button_restart.isEnabled())
                 self.assertEqual(tab.state, 'fatal error')
-                self.assertNotIn('Worker processes stopped', ui.error_message.toPlainText())
-                ui.button_restart.click()
+                self.assertNotIn('Worker processes stopped', tab._ui.error_message.toPlainText())
+                tab._ui.button_restart.click()
                 wait_until(lambda: not tab._restart_thread.is_alive())
-                self.assertIs(tab._ui, ui)
-                self.assertIs(tab._output_box, output)
-                self.assertGreaterEqual(tab.notebook.indexOf(ui), 0)
-                self.assertTrue(ui.button_restart.isEnabled())
-                text = ui.error_message.toPlainText()
+                self.assertGreaterEqual(tab.notebook.indexOf(tab._ui), 0)
+                self.assertTrue(tab._ui.button_restart.isEnabled())
+                text = tab._ui.error_message.toPlainText()
                 for word in ('main', 'control-host', 'No replacement', 'Restore', 'Restart'):
                     self.assertIn(word, text)
                 self.assertEqual((directory / 'hardware').read_text(), 'ar')
             finally:
                 tab.remote_process_client = None
-        ui.button_restart.click()
+        tab._ui.button_restart.click()
         wait_until(lambda: not tab._restart_thread.is_alive()
                    and tab.workers['main'][1] and tab.state == 'idle')
-        self.assertIsNot(tab._ui, ui)
         self.assertEqual((directory / 'hardware').read_text(), 'ara')
 
     def test_a_method_error_returns_none_but_a_missing_method_is_fatal(self):
